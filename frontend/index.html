@@ -1,0 +1,1171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FORGE · 高温合金机器学习实验台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..700&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;margin-right:8px"><rect x="3" y="3" width="18" height="18" rx="5" fill="url(#fg1)" opacity=".9"/><path d="M8 12.5L11 15.5L16.5 9" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="fg1" x1="3" y1="3" x2="21" y2="21"><stop stop-color="#0A84FF"/><stop offset="1" stop-color="#5E5CE6"/></linearGradient></defs></svg>FORGE</div>
+      <div class="brand-sub">Superalloy ML Bench</div>
+      <div class="brand-meta"><span class="dot"></span><span>v3.0 · runtime ok</span></div>
+    </div>
+
+    <div class="sidebar-toggle" id="sidebar-toggle" title="折叠/展开侧边栏">⟨</div>
+
+    <nav class="nav" id="nav">
+      <div class="nav-group">
+        <div class="nav-cat">Data · 数据 <span class="arrow">▼</span></div>
+        <div class="nav-item active" data-page="dashboard"><span class="ic">◉</span>数据可视化</div>
+        <div class="nav-item" data-page="outliers"><span class="ic">⊙</span>异常值检测</div>
+        <div class="nav-item" data-page="database"><span class="ic">▤</span>数据库管理</div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-cat">Features · 特征 <span class="arrow">▼</span></div>
+        <div class="nav-item" data-page="duplicates"><span class="ic">⧉</span>重复值处理</div>
+        <div class="nav-item" data-page="correlation"><span class="ic">⌬</span>特征相关性</div>
+        <div class="nav-item" data-page="selection"><span class="ic">↧</span>特征筛选与降维</div>
+        <div class="nav-item" data-page="importance"><span class="ic"> ▲</span>特征重要性排序</div>
+        <div class="nav-item" data-page="missing"><span class="ic">∅</span>缺失值处理</div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-cat">Unsupervised · 无监督 <span class="arrow">▼</span></div>
+        <div class="nav-item" data-page="clustering"><span class="ic">⬡</span>聚类与降维</div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-cat">Regression · 回归 <span class="arrow">▼</span></div>
+        <div class="nav-item" data-page="single"><span class="ic">◆</span>单一模型</div>
+        <div class="nav-item" data-page="compare"><span class="ic">▦</span>模型比较</div>
+        <div class="nav-item" data-page="ddpg"><span class="ic">⚡</span>深度强化学习</div>
+      </div>
+
+      <div class="nav-group">
+          <div class="nav-cat">Active · 主动学习 <span class="arrow">▼</span></div>
+          <div class="nav-item" data-page="active"><span class="ic">✦</span>单目标优化</div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-cat">System · 系统 <span class="arrow">▼</span></div>
+        <div class="nav-item" data-page="codeopt"><span class="ic">⌗</span>代码优化</div>
+      </div>
+    </nav>
+
+    <div class="sidebar-foot">
+      <span>HGMX-22E</span>
+      <span>RTX 3060</span>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+    <header class="topbar">
+      <div class="crumb">
+        <span>FORGE</span><span class="sep">/</span>
+        <span id="crumb-cat">Data</span><span class="sep">/</span>
+        <b id="crumb-page">数据可视化</b>
+      </div>
+      <div class="topbar-r">
+      <span class="kbd">⌘K</span>
+        <div class="gpu-badge"><span class="gd"></span>CUDA 12.6 · 6GB</div>
+      </div>
+    </header>
+
+    <section class="content" id="content">
+
+      <!-- ============ PAGE: DASHBOARD ============ -->
+      <div class="page active" id="page-dashboard">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">Section 01 · Overview</div>
+            <h1 class="page-title">数据 <em>可视化仪表盘</em></h1>
+          </div>
+          <div class="page-desc">高温合金数据集汇总：22 种元素成分 + 微结构 DINO-v2 特征（PCA 70 维）→ 维氏硬度 HV。基于 149 条实测样本与 10,000 条 GAN 生成样本。</div>
+        </div>
+
+        <div class="metrics">
+          <div class="metric"><div class="metric-label">实测样本</div><div class="metric-val">149</div><div class="metric-delta">+ 10,000 GAN 扩增</div></div>
+          <div class="metric"><div class="metric-label">成分元素</div><div class="metric-val">22</div><div class="metric-delta">Al · W · Ta · Ti · Cr …</div></div>
+          <div class="metric"><div class="metric-label">微结构特征</div><div class="metric-val">70</div><div class="metric-delta">DINO-v2 → PCA</div></div>
+          <div class="metric"><div class="metric-label">硬度范围 HV</div><div class="metric-val warn">174–489</div><div class="metric-delta">σ ≈ 62.4</div></div>
+        </div>
+
+        <div class="grid g-split">
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title"><span class="num">01</span>元素含量分布（wt %）</div>
+              <div class="chips" id="dist-chips">
+                <span class="chip on" data-type="boxplot">boxplot</span>
+                <span class="chip" data-type="violin">violin</span>
+                <span class="chip" data-type="histogram">histogram</span>
+              </div>
+            </div>
+            <div class="card-body"><div class="chart-box tall"><canvas id="ch-dist"></canvas></div></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">02</span>硬度分布直方图</div></div>
+            <div class="card-body"><div class="chart-box tall"><canvas id="ch-hist"></canvas></div></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:20px">
+          <div class="card-head">
+            <div class="card-title"><span class="num">03</span>元素相关性矩阵 · <span id="corr-method-label">pearson</span></div>
+            <div class="chips" id="corr-chips">
+              <span class="chip on" data-method="pearson">pearson</span>
+              <span class="chip" data-method="spearman">spearman</span>
+              <span class="chip" data-method="kendall">kendall</span>
+            </div>
+          </div>
+          <div class="card-body"><div class="chart-box tall"><canvas id="ch-corr"></canvas></div></div>
+        </div>
+      </div>
+
+      <!-- ============ PAGE: SINGLE MODEL ============ -->
+      <div class="page" id="page-single">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">Section 10 · Regression</div>
+            <h1 class="page-title">单一 <em>回归模型配置</em></h1>
+          </div>
+          <div class="page-desc">上传数据集 → 配置特征与目标 → 选择回归器与超参数 → 训练并评估。支持 15+ 种算法，含贝叶斯自动调参与交叉验证。</div>
+        </div>
+
+        <div class="grid g-split">
+          <!-- LEFT: config -->
+          <div>
+            <!-- upload -->
+            <div class="card">
+              <div class="card-head"><div class="card-title"><span class="num">01</span>数据集</div><span class="tag tag-success">已就绪</span></div>
+              <div class="card-body">
+                <div class="data-info" id="data-info">
+                  <div class="di-icon">⬡</div>
+                  <div class="di-body">
+                    <div class="di-name" id="di-name">data_with_microstructure.xlsx</div>
+                    <div class="di-meta" id="di-meta">149 样本 · 22 元素特征 · 目标 HV</div>
+                  </div>
+                  <div class="di-status">✓</div>
+                </div>
+
+                <!-- 数据源选择 -->
+                <div class="field" style="margin-top:16px">
+                  <label class="field-label">数据源（训练 / 测试划分方式）</label>
+                  <select class="select" id="data-source-sel">
+                    <option value="real" selected>仅实测（149 条 · 8:2 切分）</option>
+                    <option value="gan">仅 GAN（10000 条清洗后 · 8:2 切分）</option>
+                    <option value="mix">混合训练 + 混合测试（实测+GAN 加权）</option>
+                    <option value="gan_train_real_test">GAN 训练 → 实测测试（真实评估）</option>
+                  </select>
+                </div>
+
+                <!-- GAN 权重滑块（仅 mix 模式显示） -->
+                <div class="field" id="gan-weight-field" style="margin-top:12px;display:none">
+                  <label class="field-label">GAN 样本权重 <span id="gan-weight-val" style="color:var(--ember);margin-left:8px">0.2</span></label>
+                  <input type="range" min="0" max="100" value="20" class="slider" id="gan-weight-slider">
+                  <div style="font-size:10.5px;color:var(--text-faint);margin-top:4px">实测固定权重 1.0，GAN 越大越主导（实测会被淹没）</div>
+                </div>
+
+                <!-- GAN 清洗信息 -->
+                <div id="gan-clean-info" style="margin-top:12px;padding:12px 14px;background:rgba(10,132,255,.06);border:1px solid rgba(10,132,255,.15);border-radius:12px;font-size:11.5px;color:var(--text-dim);display:none">
+                  <div style="color:var(--ember);font-weight:600;margin-bottom:4px">⚙ GAN 数据自动清洗</div>
+                  <div id="gan-clean-stats">清洗中...</div>
+                  <div style="margin-top:4px;color:var(--text-faint)">规则：① 删 HV 缺失 ② 删成分总和 ∉ [85,115] ③ IsolationForest 删 5% 异常</div>
+                </div>
+
+                <!-- 警告 -->
+                <div id="ds-warning" style="margin-top:12px;padding:12px 14px;background:rgba(255,159,10,.06);border:1px solid rgba(255,159,10,.2);border-radius:12px;font-size:11.5px;color:var(--amber);display:none">
+                  <span id="ds-warning-text"></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- data preview -->
+            <div class="card" style="margin-top:16px">
+              <div class="card-head">
+                <div class="card-title"><span class="num">02</span>数据预览</div>
+                <div class="slider-row" style="width:220px">
+                  <input type="range" min="5" max="149" value="20" class="slider" id="row-slider">
+                  <span class="slider-val" id="row-val">20 rows</span>
+                </div>
+              </div>
+              <div class="card-body" style="padding:0">
+                <div class="table-wrap" style="max-height:260px">
+                  <table class="data" id="preview-table"></table>
+                </div>
+              </div>
+            </div>
+
+            <!-- feature & target -->
+            <div class="card" style="margin-top:16px">
+              <div class="card-head"><div class="card-title"><span class="num">03</span>特征与目标</div></div>
+              <div class="card-body">
+                <div class="field">
+                  <label class="field-label">目标变量</label>
+                  <div class="target-box">
+                    <span class="target-tag">HV · 维氏硬度</span>
+                    <span class="target-hint">单目标回归</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field-label">输入特征（22 个元素 · 全部启用）</label>
+                  <div class="chips" id="feat-chips"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT: regressor -->
+          <div>
+            <div class="card">
+              <div class="card-head"><div class="card-title"><span class="num">04</span>回归器配置</div></div>
+              <div class="card-body">
+                <div class="field">
+                  <label class="field-label">算法</label>
+                  <select class="select" id="algo-sel">
+                    <option selected>ExtraTreesRegressor</option>
+                    <option>RandomForestRegressor</option>
+                    <option>GradientBoostingRegressor</option>
+                    <option>XGBoostRegressor</option>
+                    <option>StackingRegressor</option>
+                    <option>AdaBoostRegressor</option>
+                    <option>BaggingRegressor</option>
+                    <option>SVR (RBF)</option>
+                    <option>SVR (Linear)</option>
+                    <option>MLPRegressor</option>
+                    <option>Ridge / Lasso</option>
+                    <option>LinearRegression</option>
+                    <option>PolynomialRegression</option>
+                    <option>BayesianRidge</option>
+                    <option>HuberRegressor</option>
+                    <option>GaussianProcessRegressor</option>
+                    <option>KernelRidge</option>
+                  </select>
+                </div>
+
+                <!-- 自动搜索开关 -->
+                <div class="field" style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding:14px 16px;background:rgba(10,132,255,.06);border:1px solid rgba(10,132,255,.12);border-radius:14px">
+                  <div>
+                    <div style="font-size:13px;font-weight:600;color:var(--text)">自动超参数搜索（GridSearchCV）</div>
+                    <div style="font-size:11px;color:var(--text-dim);margin-top:2px">枚举参数组合 + 交叉验证选最优</div>
+                  </div>
+                  <div class="switch" id="auto-search-sw" onclick="this.classList.toggle('on');toggleAutoSearch()"><div class="switch-track"><div class="switch-thumb"></div></div></div>
+                </div>
+
+                <!-- 增强选项：特征筛选 + 目标变换 -->
+                <div class="field" style="margin-top:12px;padding:14px 16px;background:rgba(255,159,10,.05);border:1px solid rgba(255,159,10,.12);border-radius:14px">
+                  <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">增强选项 · 小样本优化（149 样本推荐开启）</div>
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                    <div>
+                      <div style="font-size:12px;color:var(--text)">特征筛选</div>
+                      <div style="font-size:10px;color:var(--text-dim);margin-top:2px">删除全 0/低方差/低重要性特征</div>
+                    </div>
+                    <select class="select" id="single-feature-filter" style="width:auto;padding:4px 8px;font-size:12px">
+                      <option value="off">关闭</option>
+                      <option value="auto" selected>自动（删无信息）</option>
+                      <option value="importance">重要性 Top30</option>
+                    </select>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                      <div style="font-size:12px;color:var(--text)">目标变换（log）</div>
+                      <div style="font-size:10px;color:var(--text-dim);margin-top:2px">对 HV 取 log 让分布更对称</div>
+                    </div>
+                    <div class="switch on" id="single-target-transform" onclick="this.classList.toggle('on')"><div class="switch-track"><div class="switch-thumb"></div></div></div>
+                  </div>
+                </div>
+
+                <!-- CV 折数（仅自动搜索时显示） -->
+                <div class="field" id="cv-field" style="margin-top:12px;display:none">
+                  <label class="field-label">交叉验证折数（CV Folds）<span id="cv-val-display" style="color:var(--ember);margin-left:8px">5</span></label>
+                  <input type="range" min="2" max="10" value="5" class="slider" id="cv-folds-slider">
+                </div>
+
+                <!-- 手动超参数面板 -->
+                <div class="collapse open" id="hyper-col" style="margin-top:16px">
+                  <div class="card-head" style="padding:0;background:transparent;border:0">
+                    <div class="collapse-head" onclick="this.parentElement.classList.toggle('open')">
+                      <span>手动超参数 · Manual Hyper Parameters</span><span class="arrow">›</span>
+                    </div>
+                  </div>
+                  <div class="collapse-body" style="padding:16px 0 0">
+                    <div id="hyper-fields" class="grid g2"></div>
+                    <div style="font-size:11px;color:var(--text-dim);margin-top:12px;padding:8px 10px;background:rgba(255,255,255,.02);border-radius:4px">
+                      💡 留空使用默认值。开启自动搜索后，手动值会被忽略，系统会枚举所有候选组合。
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- training -->
+            <div class="card" style="margin-top:16px">
+              <div class="card-head"><div class="card-title"><span class="num">05</span>训练与评估</div></div>
+              <div class="card-body">
+                <div class="field" style="margin-bottom:16px">
+                  <label class="field-label">测试集比例 <span id="ts-val-single" style="color:var(--ember);margin-left:8px">0.20</span></label>
+                  <input type="range" min="10" max="40" value="20" class="slider" id="ts-slider-single">
+                </div>
+                <button class="btn btn-primary" id="train-btn" style="width:100%;margin-bottom:20px">▶ Train Model</button>
+                <div class="metrics" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px">
+                  <div class="metric" style="padding:14px"><div class="metric-label">R²</div><div class="metric-val good" style="font-size:24px" id="m-r2">--</div></div>
+                  <div class="metric" style="padding:14px"><div class="metric-label">RMSE</div><div class="metric-val" style="font-size:24px" id="m-rmse">--</div></div>
+                  <div class="metric" style="padding:14px"><div class="metric-label">MAE</div><div class="metric-val" style="font-size:24px" id="m-mae">--</div></div>
+                </div>
+                <div class="field">
+                  <label class="field-label">图表类型</label>
+                  <div class="chips">
+                    <span class="chip on" id="chip-chart-trad" onclick="switchChartType('trad')">传统图表</span>
+                    <span class="chip" id="chip-chart-interactive" onclick="switchChartType('interactive')">交互式图表</span>
+                  </div>
+                </div>
+                <div class="chart-box" style="margin-top:10px;position:relative;height:400px">
+                  <canvas id="ch-scatter"></canvas>
+                  <div id="scatter-interactive" style="position:absolute;inset:0;display:none;width:100%;height:100%"></div>
+                </div>
+                <div style="display:flex;gap:10px;margin-top:16px">
+                  <button class="btn btn-ghost" style="flex:1" id="btn-download-model" onclick="downloadModel()">↓ 下载模型</button>
+                  <button class="btn btn-ghost" style="flex:1" id="btn-download-csv" onclick="downloadCSV()">↓ 下载预测 CSV</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ PAGE: MODEL COMPARE ============ -->
+      <div class="page" id="page-compare">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">Section 11 · Regression</div>
+            <h1 class="page-title">模型 <em>横向对比看板</em></h1>
+          </div>
+          <div class="page-desc">勾选候选算法批量训练，按测试集 R² 自动锁定最佳模型为主模型，并横向对比各算法性能。</div>
+        </div>
+
+        <div class="grid g-split">
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">01</span>主模型锁定</div></div>
+            <div class="card-body">
+              <div id="primary-model-box" style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px;background:rgba(94, 92, 230, 0.08);border:1px solid rgba(94,92,230,0.18);border-radius:14px">
+                <div>
+                  <div style="font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--copper)" id="primary-model-tag">PRIMARY · 待训练</div>
+                  <div style="font-family:var(--sans);font-weight:600;font-size:18px;margin-top:4px" id="primary-model-name">尚未训练</div>
+                  <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-top:6px" id="primary-model-meta">点击下方"训练并比较"后自动锁定 R² 最高的模型</div>
+                </div>
+                <span class="tag tag-ember" id="primary-model-badge">待定</span>
+              </div>
+              <div class="field" style="margin-top:16px">
+                <label class="field-label">对比候选算法</label>
+                <div class="chips" id="cmp-chips">
+                  <span class="chip on" data-model="ExtraTreesRegressor">ExtraTrees</span>
+                  <span class="chip on" data-model="RandomForestRegressor">RandomForest</span>
+                  <span class="chip on" data-model="GradientBoostingRegressor">GBDT</span>
+                  <span class="chip on" data-model="XGBoostRegressor">XGBoost</span>
+                  <span class="chip" data-model="StackingRegressor">Stacking</span>
+                  <span class="chip" data-model="AdaBoostRegressor">AdaBoost</span>
+                  <span class="chip" data-model="BaggingRegressor">Bagging</span>
+                  <span class="chip" data-model="SVR (RBF)">SVR RBF</span>
+                  <span class="chip" data-model="SVR (Linear)">SVR Linear</span>
+                  <span class="chip" data-model="MLPRegressor">MLP</span>
+                  <span class="chip" data-model="Ridge / Lasso">Ridge/Lasso</span>
+                  <span class="chip" data-model="LinearRegression">Linear</span>
+                  <span class="chip" data-model="PolynomialRegression">Polynomial</span>
+                  <span class="chip" data-model="BayesianRidge">BayesianRidge</span>
+                  <span class="chip" data-model="HuberRegressor">Huber</span>
+                  <span class="chip on" data-model="GaussianProcessRegressor">GPR</span>
+                  <span class="chip on" data-model="KernelRidge">KernelRidge</span>
+                </div>
+              </div>
+              <div class="grid g2">
+                <div class="field">
+                  <label class="field-label">测试集比例 <span id="ts-val" style="color:var(--ember)">0.20</span></label>
+                  <input type="range" min="10" max="40" value="20" class="slider" id="ts-slider">
+                </div>
+                <div class="field">
+                  <label class="field-label">交叉验证折数 <span id="cv-val" style="color:var(--ember)">5</span></label>
+                  <input type="range" min="2" max="10" value="5" class="slider" id="cv-slider">
+                </div>
+              </div>
+              <div class="field" style="margin-top:12px;padding:14px 16px;background:rgba(255,159,10,.05);border:1px solid rgba(255,159,10,.12);border-radius:14px">
+                <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">增强选项 · 小样本优化</div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                  <div>
+                    <div style="font-size:12px;color:var(--text)">特征筛选</div>
+                    <div style="font-size:10px;color:var(--text-dim);margin-top:2px">删除全 0/低方差/低重要性特征</div>
+                  </div>
+                  <select class="select" id="cmp-feature-filter" style="width:auto;padding:4px 8px;font-size:12px">
+                    <option value="off">关闭</option>
+                    <option value="auto" selected>自动（删无信息）</option>
+                    <option value="importance">重要性 Top30</option>
+                  </select>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <div>
+                    <div style="font-size:12px;color:var(--text)">目标变换（log）</div>
+                    <div style="font-size:10px;color:var(--text-dim);margin-top:2px">对 HV 取 log 让分布更对称</div>
+                  </div>
+                  <div class="switch on" id="cmp-target-transform" onclick="this.classList.toggle('on')"><div class="switch-track"><div class="switch-thumb"></div></div></div>
+                </div>
+              </div>
+              <button class="btn btn-primary" style="width:100%" id="cmp-train">▶ 训练并比较</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">02</span>性能对比雷达</div></div>
+            <div class="card-body"><div class="chart-box tall"><canvas id="ch-radar"></canvas></div></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:20px">
+          <div class="card-head"><div class="card-title"><span class="num">03</span>对比报表</div></div>
+          <div class="cmp-row head">
+            <div>Model</div><div>R²</div><div>CV R² (K折)</div><div>RMSE</div><div>MAE</div><div>训练耗时</div><div></div>
+          </div>
+          <div id="cmp-rows"></div>
+        </div>
+      </div>
+
+      <!-- ============ PAGE: ACTIVE LEARNING ============ -->
+      <div class="page" id="page-active">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">Section 13 · Active Learning</div>
+            <h1 class="page-title">单目标 <em>主动学习策略</em></h1>
+          </div>
+          <div class="page-desc">从虚拟设计空间中智能筛选下一轮最值得实验的合金配比，最大化实验 ROI。基于贝叶斯采样与代理模型演化。</div>
+        </div>
+
+        <div class="metrics">
+          <div class="metric"><div class="metric-label">已测样本</div><div class="metric-val" id="al-n-train">—</div><div class="metric-delta">代理模型训练数据</div></div>
+          <div class="metric"><div class="metric-label">代理模型 CV R²</div><div class="metric-val" id="al-cv-r2">—</div><div class="metric-delta">交叉验证</div></div>
+          <div class="metric"><div class="metric-label">已测最高 HV</div><div class="metric-val warn" id="al-y-best">—</div><div class="metric-delta">当前最优</div></div>
+          <div class="metric"><div class="metric-label">设计空间</div><div class="metric-val" id="al-n-cand">—</div><div class="metric-delta">拉丁超立方采样</div></div>
+        </div>
+
+        <div class="grid g-split">
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">01</span>优化配置</div></div>
+            <div class="card-body">
+              <div class="field">
+                <label class="field-label">代理模型</label>
+                <select class="select" id="al-model">
+                  <option value="ExtraTreesRegressor">ExtraTrees（推荐·自带不确定性）</option>
+                  <option value="RandomForestRegressor">RandomForest</option>
+                  <option value="GradientBoostingRegressor">GBDT</option>
+                  <option value="XGBoostRegressor">XGBoost</option>
+                  <option value="StackingRegressor">Stacking</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field-label">采样策略</label>
+                <select class="select" id="al-strategy">
+                  <option value="ei">EI · 期望改进（最常用）</option>
+                  <option value="ucb">UCB · 上置信界</option>
+                  <option value="bayes">Bayes · 综合 EI+UCB</option>
+                  <option value="thompson">Thompson Sampling</option>
+                  <option value="greedy">Greedy · 贪心（纯利用）</option>
+                </select>
+              </div>
+              <div class="grid g2">
+                <div class="field">
+                  <label class="field-label">设计空间大小</label>
+                  <input class="input" id="al-n-candidates" type="number" value="5000" min="100" max="20000" step="100">
+                </div>
+                <div class="field">
+                  <label class="field-label">推荐数量</label>
+                  <input class="input" id="al-n-recommend" type="number" value="8" min="1" max="50">
+                </div>
+              </div>
+              <div class="grid g2">
+                <div class="field">
+                  <label class="field-label">探索 / 利用：<span id="al-explore-val" style="color:var(--ember)">0.5</span></label>
+                  <input type="range" class="input" id="al-explore" min="0" max="1" value="0.5" step="0.1">
+                </div>
+                <div class="field">
+                  <label class="field-label">CV 折数</label>
+                  <input class="input" id="al-cv-folds" type="number" value="5" min="2" max="10">
+                </div>
+              </div>
+              <button class="btn btn-primary" style="width:100%" id="al-train">▶ Train · Optimize</button>
+              <span style="display:block;margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--text-faint)">流程：训练代理 → LHS 生成设计空间 → acquisition 打分 → 选 top N</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">02</span>代理模型性能 · 设计空间预览</div><span class="tag tag-ember" id="al-status-tag">未训练</span></div>
+            <div class="card-body">
+              <div style="text-align:center;padding:12px 0">
+                <div class="hero-stat" id="al-r2-display">—<em>R²</em></div>
+                <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);letter-spacing:.05em;margin-top:8px" id="al-model-display">点击 Train · Optimize 开始</div>
+              </div>
+              <div class="chart-box" style="margin-top:12px;height:240px"><canvas id="ch-al-frontier"></canvas></div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--text-faint);text-align:center;margin-top:6px">X 轴：预测 HV · Y 轴：不确定性 σ · 高亮：推荐样本</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:20px">
+          <div class="card-head">
+            <div class="card-title"><span class="num">03</span>推荐样本看板 · Recommended Samples</div>
+            <button class="btn btn-ghost" id="al-export" disabled>↓ 一键导出 CSV</button>
+          </div>
+          <div class="card-body">
+            <div class="rec-grid" id="rec-grid">
+              <div style="grid-column:1/-1;text-align:center;color:var(--text-faint);padding:40px;font-family:var(--mono);font-size:13px">点击"Train · Optimize"获取推荐配方</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ 数据与特征工程页面 ============ -->
+      <!-- ========== 异常值检测 ========== -->
+      <div class="page" id="page-outliers">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">02 / DATA QUALITY</div>
+            <div class="page-title">异常值<em>检测</em></div>
+            <div class="page-desc">基于 Isolation Forest / IQR / Z-score 三种策略识别成分与硬度异常样本，可视化离群点分布并支持查看详情。</div>
+          </div>
+        </div>
+        <div class="metrics" id="ol-metrics">
+          <div class="metric"><div class="metric-label">总样本数</div><div class="metric-val" id="ol-total">—</div><div class="metric-delta">参与检测的样本量</div></div>
+          <div class="metric"><div class="metric-label">异常样本</div><div class="metric-val warn" id="ol-n">—</div><div class="metric-delta" id="ol-ratio">占比 —</div></div>
+          <div class="metric"><div class="metric-label">检测方法</div><div class="metric-val" id="ol-method" style="font-size:18px">—</div><div class="metric-delta">当前策略</div></div>
+          <div class="metric"><div class="metric-label">数据状态</div><div class="metric-val good" id="ol-status" style="font-size:18px">就绪</div><div class="metric-delta">点击下方运行</div></div>
+        </div>
+        <div class="grid g-split">
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">A</span>检测配置</div></div>
+            <div class="card-body">
+              <div class="field">
+                <label class="field-label">检测方法</label>
+                <select class="select" id="ol-method-sel">
+                  <option value="isolation_forest">Isolation Forest（推荐 · 多维异常）</option>
+                  <option value="iqr">IQR 四分位距（单变量箱线）</option>
+                  <option value="zscore">Z-score（标准差 ≥3）</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field-label">异常比例阈值（contamination）</label>
+                <div class="slider-row">
+                  <input type="range" min="1" max="20" value="5" class="slider" id="ol-cont-slider">
+                  <span class="slider-val" id="ol-cont-val">0.05</span>
+                </div>
+              </div>
+              <button class="btn btn-primary" id="ol-run">▶ 运行异常值检测</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">B</span>HV 分布与离群点</div></div>
+            <div class="card-body"><div class="chart-box" style="height:300px"><canvas id="ch-outliers"></canvas></div></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:20px">
+          <div class="card-head"><div class="card-title"><span class="num">C</span>异常样本列表（前 50 条）</div><span class="tag tag-ember" id="ol-count-tag">0 条</span></div>
+          <div class="card-body">
+            <div class="table-wrap" style="max-height:360px">
+              <table class="data" id="ol-table">
+                <thead><tr><th>#</th><th>样本索引</th><th>详情</th></tr></thead>
+                <tbody><tr><td colspan="3" style="text-align:center;color:var(--text-faint);padding:24px">尚未运行检测</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== 数据库管理 ========== -->
+      <div class="page" id="page-database">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">03 / DATA ACCESS</div>
+            <div class="page-title">数据库<em>管理</em></div>
+            <div class="page-desc">通过可视化查询构建器筛选、排序、聚合合金数据集，无需手写 SQL。</div>
+          </div>
+        </div>
+        <div class="metrics">
+          <div class="metric"><div class="metric-label">数据源</div><div class="metric-val" id="db-source" style="font-size:16px">data_with_microstructure</div><div class="metric-delta">本地 Excel · 单表模式</div></div>
+          <div class="metric"><div class="metric-label">总行数</div><div class="metric-val" id="db-rows">—</div><div class="metric-delta">数据集记录数</div></div>
+          <div class="metric"><div class="metric-label">列数</div><div class="metric-val" id="db-cols">—</div><div class="metric-delta">包含成分+微结构+目标</div></div>
+          <div class="metric"><div class="metric-label">查询状态</div><div class="metric-val good" id="db-status" style="font-size:18px">空闲</div><div class="metric-delta">等待执行</div></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><div class="card-title"><span class="num">A</span>可视化查询构建器</div>
+            <div class="chips" id="db-quick">
+              <span class="chip" data-preset="top10">前 10 行</span>
+              <span class="chip" data-preset="hard">高硬度样本</span>
+              <span class="chip" data-preset="eleavg">元素均值</span>
+              <span class="chip" data-preset="count">样本计数</span>
+              <span class="chip" data-preset="sorted_hv">按 HV 降序</span>
+              <span class="chip" data-preset="ni_range">Ni 含量 5~10</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <!-- 查询模式切换 -->
+            <div class="field">
+              <label class="field-label">查询模式</label>
+              <div class="chips" id="db-mode">
+                <span class="chip on" data-mode="select">明细查询</span>
+                <span class="chip" data-mode="aggregate">聚合查询</span>
+              </div>
+            </div>
+
+            <!-- 明细查询面板 -->
+            <div id="db-panel-select">
+              <!-- 选列 -->
+              <div class="field">
+                <label class="field-label">查询列（留空=全部列）</label>
+                <select class="input" id="db-cols-sel" multiple style="height:80px;font-family:var(--mono);font-size:11px"></select>
+                <div style="font-family:var(--mono);font-size:10px;color:var(--text-faint);margin-top:4px">Ctrl/Cmd + 点击多选</div>
+              </div>
+              <!-- 筛选条件 -->
+              <div class="field">
+                <label class="field-label">筛选条件（AND 连接）</label>
+                <div id="db-filters"></div>
+                <button class="btn btn-ghost" id="db-add-filter" style="margin-top:6px">+ 添加条件</button>
+              </div>
+              <!-- 排序 -->
+              <div class="field">
+                <label class="field-label">排序</label>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <select class="input" id="db-order-col" style="flex:2"></select>
+                  <select class="input" id="db-order-dir" style="flex:1">
+                    <option value="asc">升序 ↑</option>
+                    <option value="desc">降序 ↓</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- 聚合查询面板 -->
+            <div id="db-panel-aggregate" style="display:none">
+              <div class="field">
+                <label class="field-label">聚合函数</label>
+                <select class="input" id="db-agg-func">
+                  <option value="count">COUNT（计数）</option>
+                  <option value="avg">AVG（均值）</option>
+                  <option value="min">MIN（最小值）</option>
+                  <option value="max">MAX（最大值）</option>
+                  <option value="sum">SUM（求和）</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field-label">聚合列（COUNT 时可留空）</label>
+                <select class="input" id="db-agg-col"></select>
+              </div>
+              <div class="field">
+                <label class="field-label">分组列（可留空=全表聚合）</label>
+                <select class="input" id="db-agg-group" multiple style="height:80px;font-family:var(--mono);font-size:11px"></select>
+              </div>
+            </div>
+
+            <!-- Limit -->
+            <div class="field">
+              <label class="field-label">返回行数上限：<span id="db-limit-val" style="color:var(--ember)">100</span></label>
+              <input type="range" class="input" id="db-limit" min="1" max="1000" value="100" step="1">
+            </div>
+
+            <button class="btn btn-primary" id="db-run">▶ 执行查询</button>
+            <span style="margin-left:12px;font-family:var(--mono);font-size:11px;color:var(--text-faint)">只读查询 · 不会修改数据</span>
+          </div>
+        </div>
+        <div class="card" style="margin-top:20px">
+          <div class="card-head"><div class="card-title"><span class="num">B</span>查询结果</div><span class="tag tag-ember" id="db-result-tag">未执行</span></div>
+          <div class="card-body">
+            <div class="table-wrap" style="max-height:420px">
+              <table class="data" id="db-table">
+                <thead><tr><th style="text-align:center;color:var(--text-faint)">点击"执行查询"查看结果</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== 重复值处理 ========== -->
+      <div class="page" id="page-duplicates">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">04 / DATA QUALITY</div>
+            <div class="page-title">重复值<em>处理</em></div>
+            <div class="page-desc">基于 22 元素成分指纹识别重复样本，自动区分"温度梯度实验"与"真重复"。</div>
+          </div>
+        </div>
+        <div class="metrics">
+          <div class="metric"><div class="metric-label">总样本</div><div class="metric-val" id="dp-total">—</div><div class="metric-delta">数据集行数</div></div>
+          <div class="metric"><div class="metric-label">成分重复行</div><div class="metric-val warn" id="dp-n">—</div><div class="metric-delta" id="dp-ratio">占比 —</div></div>
+          <div class="metric"><div class="metric-label">独立实验组</div><div class="metric-val good" id="dp-temp-groups">—</div><div class="metric-delta" id="dp-temp-hint">同配方不同条件</div></div>
+          <div class="metric"><div class="metric-label">真重复样本</div><div class="metric-val" id="dp-real" style="color:var(--danger)">—</div><div class="metric-delta" id="dp-real-hint">需处理</div></div>
+        </div>
+
+        <div class="card" id="dp-explain-card" style="margin-bottom:20px;display:none">
+          <div class="card-head">
+            <div class="card-title"><span class="num">!</span>独立实验说明</div>
+            <span class="tag tag-success" id="dp-explain-tag">正常</span>
+          </div>
+          <div class="card-body">
+            <div style="color:var(--text-dim);font-size:13px;line-height:1.7">
+              数据集中存在多组"成分完全相同、但实验编号不同"的样本，后缀含义包括：<br>
+              <code style="color:var(--ember);font-family:var(--mono);background:rgba(10,132,255,.08);padding:2px 8px;border-radius:6px">-12 / -600 / -1000</code>
+              <b style="color:var(--text)">测试温度</b> ·
+              <code style="color:var(--ember);font-family:var(--mono);background:rgba(10,132,255,.08);padding:2px 8px;border-radius:6px">-cast / -age / -solution</code>
+              <b style="color:var(--text)">热处理工艺</b> ·
+              <code style="color:var(--ember);font-family:var(--mono);background:rgba(10,132,255,.08);padding:2px 8px;border-radius:6px">-air-cooling / -oil-quenching</code>
+              <b style="color:var(--text)">冷却方式</b><br>
+              这是高温合金研究的标准做法：<b style="color:var(--text)">同一配方在不同条件下测试硬度</b>，用于研究工艺对性能的影响。<br>
+              这些样本<b style="color:var(--success)">属于合法的独立实验</b>，不应删除。下方表格中标注为 <span class="tag tag-success">独立实验</span> 的行均属此类。
+              仅标注为 <span class="tag tag-ember">真重复</span> 的行才需要处理。
+            </div>
+          </div>
+        </div>
+
+        <div class="grid g2">
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">A</span>检测控制</div></div>
+            <div class="card-body">
+              <div class="field">
+                <label class="field-label">匹配列</label>
+                <div class="chips" id="dp-cols">
+                  <span class="chip on">22 元素成分列（默认）</span>
+                </div>
+              </div>
+              <div class="field">
+                <label class="field-label">建议处理策略（仅对真重复生效）</label>
+                <select class="select" id="dp-strategy">
+                  <option value="keep_first">保留首次出现（推荐）</option>
+                  <option value="mean">相同成分取 HV 均值</option>
+                  <option value="drop">全部删除</option>
+                </select>
+              </div>
+              <button class="btn btn-primary" id="dp-run">▶ 检测重复样本</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">B</span>重复类型分布</div></div>
+            <div class="card-body"><div class="chart-box" style="height:260px"><canvas id="ch-duplicates"></canvas></div></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:20px">
+          <div class="card-head"><div class="card-title"><span class="num">C</span>重复样本列表（前 50 条）</div><span class="tag tag-ember" id="dp-count-tag">0 条</span></div>
+          <div class="card-body">
+            <div class="table-wrap" style="max-height:340px">
+              <table class="data" id="dp-table">
+                <thead><tr><th>#</th><th>样本</th><th>类型</th></tr></thead>
+                <tbody><tr><td colspan="3" style="text-align:center;color:var(--text-faint);padding:24px">尚未运行检测</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== 特征相关性 ========== -->
+      <div class="page" id="page-correlation">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">05 / FEATURE ANALYSIS</div>
+            <div class="page-title">特征<em>相关性</em></div>
+            <div class="page-desc">Pearson / Spearman / Kendall 三种相关性矩阵，气泡大小=|r|，青色正相关 / 紫色负相关，自动列出高耦合元素对（|r|≥0.7）。</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title"><span class="num">A</span>相关性矩阵热力图</div>
+            <div class="chips" id="corr-method-chips">
+              <span class="chip on" data-method="pearson">Pearson</span>
+              <span class="chip" data-method="spearman">Spearman</span>
+              <span class="chip" data-method="kendall">Kendall</span>
+            </div>
+          </div>
+          <div class="card-body"><div class="chart-box tall"><canvas id="ch-corr-page"></canvas></div></div>
+        </div>
+        <div class="card" style="margin-top:20px">
+          <div class="card-head"><div class="card-title"><span class="num">B</span>高耦合元素对（|r| ≥ 0.7）</div><span class="tag tag-ember" id="corr-pairs-tag">0 对</span></div>
+          <div class="card-body">
+            <div class="table-wrap" style="max-height:280px">
+              <table class="data" id="corr-pairs-table">
+                <thead><tr><th>#</th><th>元素 A</th><th>元素 B</th><th>相关系数 r</th><th>强度</th></tr></thead>
+                <tbody><tr><td colspan="5" style="text-align:center;color:var(--text-faint);padding:24px">尚未加载</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== 特征筛选与降维 ========== -->
+      <div class="page" id="page-selection">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">06 / DIMENSIONALITY</div>
+            <div class="page-title">特征筛选与<em>降维</em></div>
+            <div class="page-desc">PCA 主成分分析，单/累积方差解释曲线，每个主成分贡献最大的 Top-3 元素，辅助确定最优降维维度。</div>
+          </div>
+        </div>
+        <div class="metrics">
+          <div class="metric"><div class="metric-label">主成分数</div><div class="metric-val" id="pca-n">—</div><div class="metric-delta">当前计算维度</div></div>
+          <div class="metric"><div class="metric-label">累积方差</div><div class="metric-val good" id="pca-cum">—</div><div class="metric-delta">前 N 个 PC 保留信息</div></div>
+          <div class="metric"><div class="metric-label">第一主成分</div><div class="metric-val warn" id="pca-pc1" style="font-size:18px">—</div><div class="metric-delta">方差占比</div></div>
+          <div class="metric"><div class="metric-label">建议维度</div><div class="metric-val" id="pca-rec" style="font-size:18px">—</div><div class="metric-delta">≥90% 方差所需</div></div>
+        </div>
+        <div class="grid g-split">
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">A</span>PCA 配置</div></div>
+            <div class="card-body">
+              <div class="field">
+                <label class="field-label">主成分数量（1–22）</label>
+                <div class="slider-row">
+                  <input type="range" min="2" max="22" value="10" class="slider" id="pca-slider">
+                  <span class="slider-val" id="pca-slider-val">10</span>
+                </div>
+              </div>
+              <button class="btn btn-primary" id="pca-run">▶ 重新计算 PCA</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">B</span>方差解释曲线</div></div>
+            <div class="card-body"><div class="chart-box" style="height:280px"><canvas id="ch-pca"></canvas></div></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:20px">
+          <div class="card-head"><div class="card-title"><span class="num">C</span>主成分 Top-3 贡献元素</div></div>
+          <div class="card-body">
+            <div class="table-wrap" style="max-height:340px">
+              <table class="data" id="pca-table">
+                <thead><tr><th>PC</th><th>方差占比</th><th>累积</th><th>Top-1</th><th>Top-2</th><th>Top-3</th></tr></thead>
+                <tbody><tr><td colspan="6" style="text-align:center;color:var(--text-faint);padding:24px">尚未计算</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== 特征重要性 ========== -->
+      <div class="page" id="page-importance">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">07 / FEATURE SELECTION</div>
+            <div class="page-title">特征<em>重要性</em>排序</div>
+            <div class="page-desc">基于 ExtraTrees 集成树的 Gini 重要性，量化 22 元素对维氏硬度的贡献，识别关键合金元素。</div>
+          </div>
+        </div>
+        <div class="metrics">
+          <div class="metric"><div class="metric-label">使用模型</div><div class="metric-val" id="imp-model" style="font-size:16px">ExtraTrees</div><div class="metric-delta">200 棵树 · 集成回归</div></div>
+          <div class="metric"><div class="metric-label">最重要元素</div><div class="metric-val warn" id="imp-top1" style="font-size:24px">—</div><div class="metric-delta" id="imp-top1-v">贡献 —</div></div>
+          <div class="metric"><div class="metric-label">Top-5 累积贡献</div><div class="metric-val good" id="imp-top5">—</div><div class="metric-delta">前 5 大元素合计</div></div>
+          <div class="metric"><div class="metric-label">特征总数</div><div class="metric-val" id="imp-n">22</div><div class="metric-delta">22 元素成分</div></div>
+        </div>
+        <div class="grid g-split">
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">A</span>训练配置</div></div>
+            <div class="card-body">
+              <div class="field">
+                <label class="field-label">模型</label>
+                <select class="select" id="imp-model-sel">
+                  <option value="ExtraTreesRegressor">ExtraTrees（推荐）</option>
+                  <option value="RandomForestRegressor">RandomForest</option>
+                  <option value="GradientBoostingRegressor">GradientBoosting</option>
+                </select>
+              </div>
+              <button class="btn btn-primary" id="imp-run">▶ 训练并计算重要性</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">B</span>特征重要性条形图</div></div>
+            <div class="card-body"><div class="chart-box tall"><canvas id="ch-importance"></canvas></div></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:20px">
+          <div class="card-head"><div class="card-title"><span class="num">C</span>Top-5 关键元素卡片</div></div>
+          <div class="card-body"><div class="rec-grid" id="imp-top-grid"></div></div>
+        </div>
+      </div>
+
+      <!-- ========== 缺失值处理 ========== -->
+      <div class="page" id="page-missing">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">08 / DATA QUALITY</div>
+            <div class="page-title">缺失值<em>处理</em></div>
+            <div class="page-desc">统计每列缺失情况，支持中位数 / 均值 / KNN / 删除四种填充策略，可视化缺失分布并对比填充前后。</div>
+          </div>
+        </div>
+        <div class="metrics">
+          <div class="metric"><div class="metric-label">总行数</div><div class="metric-val" id="ms-total">—</div><div class="metric-delta">数据集记录</div></div>
+          <div class="metric"><div class="metric-label">缺失值总数</div><div class="metric-val warn" id="ms-n">—</div><div class="metric-delta" id="ms-ratio">占 —</div></div>
+          <div class="metric"><div class="metric-label">含缺失列数</div><div class="metric-val" id="ms-cols">—</div><div class="metric-delta">需处理列</div></div>
+          <div class="metric"><div class="metric-label">填充状态</div><div class="metric-val good" id="ms-status" style="font-size:18px">就绪</div><div class="metric-delta">选择策略后执行</div></div>
+        </div>
+        <div class="grid g-split">
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">A</span>填充策略</div></div>
+            <div class="card-body">
+              <div class="field">
+                <label class="field-label">策略</label>
+                <select class="select" id="ms-strategy">
+                  <option value="median">中位数填充（推荐 · 抗异常值）</option>
+                  <option value="mean">均值填充</option>
+                  <option value="knn">KNN Imputer（k=5 · 相似样本）</option>
+                  <option value="drop">直接删除缺失行</option>
+                </select>
+              </div>
+              <button class="btn btn-primary" id="ms-fill">▶ 执行填充</button>
+              <button class="btn btn-ghost" id="ms-refresh" style="margin-left:8px">↻ 重新统计</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">B</span>各列缺失分布</div></div>
+            <div class="card-body"><div class="chart-box" style="height:280px"><canvas id="ch-missing"></canvas></div></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:20px">
+          <div class="card-head"><div class="card-title"><span class="num">C</span>缺失详情</div></div>
+          <div class="card-body">
+            <div class="table-wrap" style="max-height:340px">
+              <table class="data" id="ms-table">
+                <thead><tr><th>列名</th><th>缺失数</th><th>总行数</th><th>缺失率</th></tr></thead>
+                <tbody><tr><td colspan="4" style="text-align:center;color:var(--text-faint);padding:24px">尚未加载</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== 聚类与降维 ========== -->
+      <div class="page" id="page-clustering">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">09 / UNSUPERVISED</div>
+            <div class="page-title">聚类与<em>降维</em></div>
+            <div class="page-desc">K-Means 聚类 + PCA 二维投影可视化，按 cluster 着色，观察合金体系自然分群与硬度分布。</div>
+          </div>
+        </div>
+        <div class="metrics">
+          <div class="metric"><div class="metric-label">聚类数 K</div><div class="metric-val" id="cl-k">—</div><div class="metric-delta">当前簇数</div></div>
+          <div class="metric"><div class="metric-label">总样本</div><div class="metric-val" id="cl-total">—</div><div class="metric-delta">参与聚类</div></div>
+          <div class="metric"><div class="metric-label">最大簇</div><div class="metric-val warn" id="cl-max" style="font-size:20px">—</div><div class="metric-delta" id="cl-max-n">—</div></div>
+          <div class="metric"><div class="metric-label">PCA 方差</div><div class="metric-val good" id="cl-pca" style="font-size:20px">—</div><div class="metric-delta">2D 投影保留信息</div></div>
+        </div>
+        <div class="grid g-split">
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">A</span>聚类配置</div></div>
+            <div class="card-body">
+              <div class="field">
+                <label class="field-label">簇数 K</label>
+                <div class="slider-row">
+                  <input type="range" min="2" max="8" value="4" class="slider" id="cl-slider">
+                  <span class="slider-val" id="cl-slider-val">4</span>
+                </div>
+              </div>
+              <button class="btn btn-primary" id="cl-run">▶ 运行 K-Means</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">B</span>PCA 二维投影（按簇着色）</div></div>
+            <div class="card-body"><div class="chart-box tall"><canvas id="ch-cluster"></canvas></div></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:20px">
+          <div class="card-head"><div class="card-title"><span class="num">C</span>簇统计</div></div>
+          <div class="card-body">
+            <div class="table-wrap" style="max-height:240px">
+              <table class="data" id="cl-table">
+                <thead><tr><th>簇</th><th>样本数</th><th>占比</th><th>HV 均值</th><th>HV 范围</th></tr></thead>
+                <tbody><tr><td colspan="5" style="text-align:center;color:var(--text-faint);padding:24px">尚未运行</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== 深度强化学习 (DDPG) ========== -->
+      <div class="page" id="page-ddpg">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">Section 12 · Regression</div>
+            <div class="page-title">深度<em>强化学习</em> · DDPG</div>
+            <div class="page-desc">用 DDPG（深度确定性策略梯度）训练 Actor-Critic 网络预测合金硬度，支持实测/GAN 混合数据源，异步训练实时查看进度。</div>
+          </div>
+        </div>
+
+        <div class="metrics">
+          <div class="metric"><div class="metric-label">训练状态</div><div class="metric-val" id="ddpg-status" style="font-size:18px">空闲</div><div class="metric-delta" id="ddpg-task-id">—</div></div>
+          <div class="metric"><div class="metric-label">当前轮次</div><div class="metric-val" id="ddpg-epoch">0 / 0</div><div class="metric-delta" id="ddpg-progress">0%</div></div>
+          <div class="metric"><div class="metric-label">验证集 R²</div><div class="metric-val warn" id="ddpg-val-r2">—</div><div class="metric-delta" id="ddpg-best-r2">最佳 —</div></div>
+          <div class="metric"><div class="metric-label">运行设备</div><div class="metric-val good" id="ddpg-device" style="font-size:18px">—</div><div class="metric-delta" id="ddpg-data-info">—</div></div>
+        </div>
+
+        <div class="grid g-split">
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">A</span>训练配置</div></div>
+            <div class="card-body">
+              <div class="grid g2">
+                <div class="field">
+                  <label class="field-label">数据源</label>
+                  <select class="select" id="ddpg-data-source">
+                    <option value="real">实测数据 (149 条)</option>
+                    <option value="gan">GAN 混合数据 (10149 条)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="field-label">训练轮次 (epochs)</label>
+                  <input class="input" id="ddpg-epochs" type="number" value="500" min="50" max="5000" step="50">
+                </div>
+              </div>
+              <div class="grid g3" style="margin-top:12px">
+                <div class="field">
+                  <label class="field-label">Batch Size</label>
+                  <input class="input" id="ddpg-batch" type="number" value="32" min="8" max="256" step="8">
+                </div>
+                <div class="field">
+                  <label class="field-label">Actor 学习率</label>
+                  <input class="input" id="ddpg-lr-actor" type="number" value="0.0001" min="0.00001" max="0.01" step="0.00001">
+                </div>
+                <div class="field">
+                  <label class="field-label">Critic 学习率</label>
+                  <input class="input" id="ddpg-lr-critic" type="number" value="0.0005" min="0.00001" max="0.01" step="0.00001">
+                </div>
+              </div>
+              <div class="grid g2" style="margin-top:12px">
+                <div class="field">
+                  <label class="field-label">测试集比例</label>
+                  <input class="input" id="ddpg-test-size" type="number" value="0.2" min="0.05" max="0.5" step="0.05">
+                </div>
+                <div class="field">
+                  <label class="field-label">操作</label>
+                  <div style="display:flex;gap:8px">
+                    <button class="btn btn-primary" id="ddpg-start" style="flex:1;padding:10px">▶ 开始训练</button>
+                    <button class="btn btn-ghost" id="ddpg-refresh" style="padding:10px 14px">↻ 刷新</button>
+                  </div>
+                </div>
+              </div>
+              <div style="margin-top:12px;font-family:var(--mono);font-size:11px;color:var(--text-dim);line-height:1.7">
+                <div>• <b>Actor</b>：4 层 MLP（256→256→128→1），输出标准化 HV 预测</div>
+                <div>• <b>Critic</b>：状态+动作双流网络，评估动作价值</div>
+                <div>• <b>经验回放</b>：容量 10000，优先级采样</div>
+                <div>• <b>早停</b>：验证集 R² 连续 100 轮无提升则停止</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">B</span>训练损失曲线</div><span class="tag tag-ember" id="ddpg-loss-tag">未训练</span></div>
+            <div class="card-body">
+              <div class="chart-box" style="height:280px"><canvas id="ch-ddpg-loss"></canvas></div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--text-faint);text-align:center;margin-top:6px">Critic Loss（蓝）+ Actor Loss（橙）· 最近 200 个数据点</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:20px">
+          <div class="card-head"><div class="card-title"><span class="num">C</span>训练结果 · 测试集预测 vs 真实</div><span class="tag tag-ember" id="ddpg-result-tag">未训练</span></div>
+          <div class="card-body">
+            <div class="grid g-split">
+              <div class="chart-box" style="height:320px"><canvas id="ch-ddpg-scatter"></canvas></div>
+              <div>
+                <table class="data" id="ddpg-metrics-table" style="width:100%">
+                  <thead><tr><th>数据集</th><th>R²</th><th>RMSE</th><th>MAE</th></tr></thead>
+                  <tbody><tr><td colspan="4" style="text-align:center;color:var(--text-faint);padding:24px">尚未训练</td></tr></tbody>
+                </table>
+                <div style="margin-top:16px;font-family:var(--mono);font-size:11px;color:var(--text-dim);line-height:1.8" id="ddpg-summary">
+                  训练完成后显示三集指标对比
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== 代码优化 ========== -->
+      <div class="page" id="page-codeopt">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">14 / SYSTEM</div>
+            <div class="page-title">代码<em>优化</em>面板</div>
+            <div class="page-desc">实时监控 CPU / 内存状态（类 Windows 任务管理器），基于硬件配置推荐训练参数。</div>
+          </div>
+        </div>
+        <div class="metrics">
+          <div class="metric"><div class="metric-label">GPU</div><div class="metric-val good" id="co-gpu" style="font-size:16px">—</div><div class="metric-delta" id="co-gpu-mem">—</div></div>
+          <div class="metric"><div class="metric-label">PyTorch</div><div class="metric-val" id="co-torch" style="font-size:16px">—</div><div class="metric-delta" id="co-cuda">CUDA —</div></div>
+          <div class="metric"><div class="metric-label">采样间隔</div><div class="metric-val">1.0<span style="font-size:14px;color:var(--text-dim)">s</span></div><div class="metric-delta">实时滚动</div></div>
+          <div class="metric"><div class="metric-label">数据点</div><div class="metric-val" id="co-points">0 / 120</div><div class="metric-delta">2 分钟历史</div></div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title"><span class="num">A</span>系统监控 · 实时性能</div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <span class="tag tag-success" id="co-live-tag" style="font-size:10px">● LIVE</span>
+              <button class="btn btn-ghost" id="co-toggle-auto" style="padding:6px 14px;font-size:11px">⏸ 暂停</button>
+              <button class="btn btn-ghost" id="co-refresh" style="padding:6px 14px;font-size:11px">↻ 立即刷新</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="tm-grid">
+              <div class="tm-panel">
+                <div class="tm-head">
+                  <div class="tm-name">CPU</div>
+                  <div class="tm-stat" id="tm-cpu-info">— 核心</div>
+                </div>
+                <div class="tm-value-row">
+                  <div class="tm-value" id="tm-cpu-val" style="color:#22d3ee">—</div>
+                  <div class="tm-unit">%</div>
+                </div>
+                <div class="tm-chart-box"><canvas id="ch-cpu"></canvas></div>
+              </div>
+              <div class="tm-panel">
+                <div class="tm-head">
+                  <div class="tm-name">内存</div>
+                  <div class="tm-stat" id="tm-mem-info">— / — GB</div>
+                </div>
+                <div class="tm-value-row">
+                  <div class="tm-value" id="tm-mem-val" style="color:#a5b4fc">—</div>
+                  <div class="tm-unit">%</div>
+                </div>
+                <div class="tm-chart-box"><canvas id="ch-mem"></canvas></div>
+              </div>
+            </div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text-faint);text-align:center;margin-top:8px">每秒采样 · 保留最近 120 个数据点 · 类 Windows 任务管理器</div>
+          </div>
+        </div>
+        <div class="grid g-split" style="margin-top:20px">
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">B</span>训练参数推荐 · 针对当前项目</div></div>
+            <div class="card-body">
+              <div class="table-wrap" style="max-height:280px">
+                <table class="data" id="co-rec-table">
+                  <thead><tr><th>参数</th><th>推荐值</th><th>依据</th></tr></thead>
+                  <tbody><tr><td colspan="3" style="text-align:center;color:var(--text-faint);padding:24px">加载中...</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div class="card-title"><span class="num">C</span>优化建议</div></div>
+            <div class="card-body" id="co-tips" style="font-family:var(--mono);font-size:12px;line-height:1.9;color:var(--text-dim)">
+              点击右上角"刷新"获取系统信息后生成优化建议...
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+  </main>
+</div>
+
+<div class="toast-wrap" id="toasts"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
