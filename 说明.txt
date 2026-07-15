@@ -149,7 +149,6 @@
   │   └── styles.css        样式
   │
   ├── generated_data\       GAN 生成数据
-  ├── Features\             微结构特征缓存
   ├── results\              输出结果
   ├── model\                模型保存
   └── output\               其他输出
