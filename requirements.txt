@@ -1,0 +1,20 @@
+# FORGE-HV 依赖清单
+# 一键安装: pip install -r requirements.txt
+# (国内用户加速: pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple)
+
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.0.0
+scipy>=1.10.0
+matplotlib>=3.5.0
+seaborn>=0.12.0
+openpyxl>=3.0.0
+joblib>=1.3.0
+psutil>=5.9.0
+flask>=3.0.0
+flask-cors>=4.0.0
+xgboost>=2.0.0
+
+# PyTorch —— 默认装 CPU 版；如需 GPU 版请注释下面这行，
+# 改用: pip install torch --index-url https://download.pytorch.org/whl/cu126
+torch>=2.0.0
