@@ -82,11 +82,11 @@
 ------------------------------------------------------------
 方式 A：PyCharm 运行（推荐）
 
-  1. 用 PyCharm 打开项目文件夹 e:\项目20260701
+  1. 用 PyCharm 打开项目文件夹（即本仓库根目录）
   2. 配置项目解释器:
      File → Settings → Project → Python Interpreter
      点齿轮图标 → Add → System Interpreter
-     选择 E:\Miniconda\python.exe
+     选择 E:\Miniconda\python.exe（或 conda 环境 forge-hv 的 python.exe）
   3. 打开 app.py，右键 → Run 'app'
   4. 控制台出现 "Running on http://127.0.0.1:5000" 表示后端启动成功
   5. 在 PyCharm 文件树里找到 frontend/index.html
@@ -94,12 +94,12 @@
 
 方式 B：命令行运行
 
-  1. 打开 PowerShell（普通权限即可）
+  1. 打开 PowerShell（普通权限即可），切换到项目根目录
   2. 启动后端:
-     E:\Miniconda\python.exe e:\项目20260701\app.py
+     python app.py
   3. 看到 "Running on http://127.0.0.1:5000" 后保持窗口不关
-  4. 用浏览器打开文件 e:\项目20260701\frontend\index.html
-     （地址栏会显示 file:///e:/项目20260701/frontend/index.html）
+  4. 用浏览器打开 frontend/index.html
+     （地址栏会显示 file:///.../FORGE-HV/frontend/index.html）
 
 
 六、使用流程
@@ -127,7 +127,7 @@
 
 七、目录结构
 ------------------------------------------------------------
-  e:\项目20260701\
+  FORGE-HV\（本仓库根目录）
   ├── app.py                后端 Flask 服务（核心）
   ├── config.py             配置文件（路径、参数）
   ├── CT_main.py            离线训练脚本
@@ -161,7 +161,7 @@ Q: 浏览器打开后页面显示"后端未启动"？
 A: 后端 app.py 没运行。按第五步启动后端。
 
 Q: 启动后端报错 ModuleNotFoundError: No module named 'flask'？
-A: 依赖没装到 Miniconda。按第四步用 --target=E:\Miniconda\Lib\site-packages 重装。
+A: 依赖没装到当前用的 Python 环境。按第四步重装；若用 conda，确认已 conda activate forge-hv。
 
 Q: DDPG 训练很慢？
 A: 没有 GPU 会用 CPU 很慢。epochs 建议先设 500 试水，有 GPU 可设 2000+。
