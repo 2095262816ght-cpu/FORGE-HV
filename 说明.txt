@@ -17,7 +17,7 @@
 二、环境要求
 ------------------------------------------------------------
   操作系统 : Windows 10/11
-  Python   : 3.14（推荐用 Miniconda，安装到 E:\Miniconda）
+  Python   : 3.10+（推荐用 Miniconda；conda 方式会自动装 Python，无需手动装）
   浏览器   : Chrome / Edge（推荐最新版）
   GPU      : 可选（有 NVIDIA 显卡可启用 DDPG，无则自动 CPU）
 
@@ -41,33 +41,41 @@
 
 四、安装步骤（只需做一次）
 ------------------------------------------------------------
-1. 安装 Miniconda
-   下载: https://docs.conda.io/en/latest/miniconda.html
-   安装路径建议: E:\Miniconda
-   安装时勾选"Add to PATH"或手动加环境变量
+项目根目录已内置依赖清单文件，类比 Maven 的 pom.xml：
+  - requirements.txt   pip 依赖清单
+  - environment.yml    conda 环境定义（连 Python 一起装）
+  - install.bat        交互式一键安装脚本
 
-2. 以管理员身份打开 Anaconda PowerShell Prompt
-   （开始菜单搜索 "Anaconda PowerShell" 右键管理员运行）
+任选以下一种方式即可（推荐方式 A 或 C）：
 
-3. 安装全部依赖（用清华源加速）
-   执行以下命令（一行一行复制粘贴回车）:
+方式 A：一键脚本（最简单，零配置）
+  双击运行 install.bat，按提示选择 [1] pip 或 [2] conda 即可，
+  脚本会自动用清华镜像装好全部依赖（含 PyTorch CPU 版）。
 
-   E:\Miniconda\python.exe -m pip install --target=E:\Miniconda\Lib\site-packages -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn numpy pandas scikit-learn matplotlib seaborn openpyxl scipy psutil joblib
+方式 B：pip 安装（需已有 Python 3.10+）
+  在项目根目录打开 PowerShell，执行:
 
-   E:\Miniconda\python.exe -m pip install --target=E:\Miniconda\Lib\site-packages -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn flask flask-cors xgboost
+    python -m pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
 
-4. 安装 PyTorch（可选，仅 DDPG 深度强化学习需要）
-   有 NVIDIA 显卡:
-   E:\Miniconda\python.exe -m pip install --target=E:\Miniconda\Lib\site-packages --index-url https://download.pytorch.org/whl/cu126 torch
+方式 C：conda 环境（推荐，最接近 Maven，连 Python 一起装）
+  先安装 Miniconda: https://docs.conda.io/en/latest/miniconda.html
+  然后在项目根目录执行:
 
-   无显卡（CPU 版）:
-   E:\Miniconda\python.exe -m pip install --target=E:\Miniconda\Lib\site-packages --index-url https://download.pytorch.org/whl/cpu torch
+    conda env create -f environment.yml      # 创建环境 forge-hv（首次较慢）
+    conda activate forge-hv                   # 激活环境（以后每次用都要先激活）
 
-5. 验证安装
-   E:\Miniconda\python.exe -c "import flask, sklearn, pandas, xgboost; print('基础依赖 OK')"
-   E:\Miniconda\python.exe -c "import torch; print('PyTorch', torch.__version__, 'CUDA', torch.cuda.is_available())"
+安装 PyTorch GPU 版（可选，仅 DDPG 且有 NVIDIA 显卡需要）
+  默认装的是 CPU 版 PyTorch，训练较慢。如需 GPU 加速，在装完上面依赖后单独执行:
 
-   输出 "基础依赖 OK" 和 "PyTorch 2.x.x CUDA True/False" 即安装成功。
+    nvidia-smi                               # 先看右上角 CUDA Version
+    pip install torch --index-url https://download.pytorch.org/whl/cu126 --force-reinstall
+    # CUDA 11.8 用 cu118，12.1 用 cu121，12.6 用 cu126
+
+验证安装
+  python -c "import flask, sklearn, pandas, numpy, xgboost; print('基础依赖 OK')"
+  python -c "import torch; print('PyTorch', torch.__version__, 'CUDA', torch.cuda.is_available())"
+
+  输出 "基础依赖 OK" 和 "PyTorch 2.x.x CUDA True/False" 即安装成功。
 
 
 五、运行步骤（每次使用）
