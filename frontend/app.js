@@ -79,6 +79,45 @@ Chart.defaults.borderColor='rgba(31, 41, 55, 0.6)';
 Chart.defaults.font.family='IBM Plex Mono';
 Chart.defaults.font.size=10;
 
+/* ============ iOS ANIMATION ENGINE ============ */
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ── CountUp Animation ── */
+function countUp(el, target, opts = {}) {
+  if (prefersReducedMotion || !el) { if(el) el.textContent = target; return; }
+  const { duration = 800, prefix = '', suffix = '', decimals = 0 } = opts;
+  const start = 0;
+  const range = target - start;
+  if (range === 0) return;
+  const startTime = performance.now();
+  function step(now) {
+    const elapsed = Math.min((now - startTime) / duration, 1);
+    const eased = 1 - Math.pow(1 - elapsed, 3); // ease-out cubic
+    const current = start + range * eased;
+    el.textContent = prefix + current.toFixed(decimals) + suffix;
+    if (elapsed < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+/* ── Ripple Effect for buttons ── */
+document.addEventListener('pointerdown', (e) => {
+  if (prefersReducedMotion) return;
+  const btn = e.target.closest('.btn');
+  if (!btn) return;
+  const rect = btn.getBoundingClientRect();
+  const x = ((e.clientX - rect.left) / rect.width * 100).toFixed(1);
+  const y = ((e.clientY - rect.top) / rect.height * 100).toFixed(1);
+  btn.style.setProperty('--ripple-x', x + '%');
+  btn.style.setProperty('--ripple-y', y + '%');
+}, { passive: true });
+
+/* ── Passive scroll listeners for performance ── */
+window.addEventListener('load', () => {
+  document.querySelector('.content')?.addEventListener('scroll', () => {}, { passive: true });
+  document.querySelector('.nav')?.addEventListener('scroll', () => {}, { passive: true });
+});
+
 /* ============ API 配置 ============ */
 const API_BASE='http://127.0.0.1:5000';
 let API_ONLINE=false;
