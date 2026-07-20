@@ -86,19 +86,23 @@
   2. 配置项目解释器:
      File → Settings → Project → Python Interpreter
      点齿轮图标 → Add → System Interpreter
-     选择 E:\Miniconda\python.exe（或 conda 环境 forge-hv 的 python.exe）
+     选择 E:\Miniconda\envs\forge-hv\python.exe
+     （这是 conda 环境 forge-hv 的解释器，含全部依赖 + CUDA 版 PyTorch）
   3. 打开 app.py，右键 → Run 'app'
   4. 控制台出现 "Running on http://127.0.0.1:5000" 表示后端启动成功
   5. 在 PyCharm 文件树里找到 frontend/index.html
      右键 → Open in → Browser → Chrome
 
-方式 B：命令行运行
+方式 B：命令行运行（conda 环境）
 
   1. 打开 PowerShell（普通权限即可），切换到项目根目录
-  2. 启动后端:
+  2. 激活 forge-hv 环境:
+     E:\Miniconda\Scripts\conda.exe activate forge-hv
+     （或用 E:\Miniconda\envs\forge-hv\python.exe 直接运行，免激活）
+  3. 启动后端:
      python app.py
-  3. 看到 "Running on http://127.0.0.1:5000" 后保持窗口不关
-  4. 用浏览器打开 frontend/index.html
+  4. 看到 "Running on http://127.0.0.1:5000" 后保持窗口不关
+  5. 用浏览器打开 frontend/index.html
      （地址栏会显示 file:///.../FORGE-HV/frontend/index.html）
 
 
