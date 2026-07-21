@@ -221,6 +221,191 @@ def safe_float(x):
 
 
 # ============================================================
+# 用户系统 + 历史记录 + 数据管理（统一扩展模块 · 鉴权基础设施）
+# ------------------------------------------------------------
+# - SQLite 持久化：users / history / settings 三张表
+# - JWT 鉴权：登录签发 token，受保护接口通过 @login_required 校验
+# - 角色：admin / user / guest（游客仅当 allow_guest_browse=true 时）
+# - 历史：训练/预测完成自动落库，支持按时间/算法/用户筛选 + 导出
+# - 数据管理：对当前数据源做行级增删改查 + 批量导入 + 导出
+# 注意：本块必须置于所有使用 @login_required 的路由之前
+# ============================================================
+
+DB_PATH = os.path.join(config.BASE_DIR, "forge.db")
+JWT_SECRET = "forge-hv-secret-key-2026"  # 本地演示用，可改环境变量
+JWT_EXP_HOURS = 24
+
+_DB_LOCK = threading.Lock()
+
+
+def _get_db():
+    """获取 SQLite 连接（行级结果可按列名访问）"""
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _init_db():
+    """初始化数据库表"""
+    with _DB_LOCK:
+        conn = _get_db()
+        c = conn.cursor()
+        # 用户表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                salt TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
+                display_name TEXT,
+                email TEXT,
+                created_at TEXT NOT NULL,
+                last_login TEXT
+            )
+        """)
+        # 历史预测记录表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                username TEXT,
+                task_type TEXT,
+                algorithm TEXT,
+                data_source TEXT,
+                metrics TEXT,
+                params TEXT,
+                n_samples INTEGER,
+                duration_sec REAL,
+                status TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )
+        """)
+        # 系统设置表（key-value）
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                updated_at TEXT NOT NULL,
+                updated_by TEXT
+            )
+        """)
+        conn.commit()
+
+        # 首次启动自动创建默认 admin 账号
+        c.execute("SELECT COUNT(*) AS n FROM users")
+        if c.fetchone()["n"] == 0:
+            _create_user_internal(c, "admin", "admin123", "admin", "管理员", "admin@forge.local")
+            print("[init] 已创建默认管理员账号 admin / admin123")
+
+        conn.commit()
+        conn.close()
+
+
+def _hash_password(password: str, salt: str = None) -> tuple:
+    """密码加盐 SHA-256 哈希（本地演示级，生产建议用 bcrypt）"""
+    if salt is None:
+        salt = secrets.token_hex(16)
+    h = hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
+    return h, salt
+
+
+def _create_user_internal(c, username, password, role="user", display_name=None, email=None):
+    """内部工具：在已打开的 cursor 上创建用户"""
+    h, salt = _hash_password(password)
+    c.execute(
+        "INSERT INTO users (username, password_hash, salt, role, display_name, email, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (username, h, salt, role, display_name, email, datetime.now().isoformat())
+    )
+
+
+def _generate_token(user_row) -> str:
+    """签发 JWT token"""
+    if not _HAS_JWT:
+        return "no-jwt-" + secrets.token_hex(16)
+    payload = {
+        "user_id": user_row["id"],
+        "username": user_row["username"],
+        "role": user_row["role"],
+        "exp": datetime.utcnow() + timedelta(hours=JWT_EXP_HOURS),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+
+def _parse_token() -> dict:
+    """从请求头解析 token，失败返回 None"""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None
+    token = auth[7:]
+    if not _HAS_JWT:
+        return None
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except Exception:
+        return None
+
+
+def _guest_payload() -> dict:
+    """构造游客虚拟身份（role=guest，user_id=0）"""
+    return {
+        "user_id": 0,
+        "username": "guest",
+        "role": "guest",
+        "exp": datetime.utcnow() + timedelta(hours=JWT_EXP_HOURS),
+    }
+
+
+def _is_guest_enabled() -> bool:
+    """读取系统设置 allow_guest_browse，判断是否开放游客浏览"""
+    try:
+        with _DB_LOCK:
+            conn = _get_db()
+            row = conn.execute("SELECT value FROM settings WHERE key = ?", ("allow_guest_browse",)).fetchone()
+            conn.close()
+        if row:
+            return str(row["value"]).lower() == "true"
+    except Exception:
+        pass
+    return _DEFAULT_SETTINGS["allow_guest_browse"].lower() == "true"
+
+
+def login_required(admin_only: bool = False, guest_allowed: bool = False):
+    """统一鉴权装饰器
+
+    参数：
+    - admin_only=True       仅管理员可访问（user/guest 都返回 403）
+    - guest_allowed=True    游客可访问（仅只读业务接口用）
+    - 两者都 False          需登录用户（admin/user 可访问，guest 返回 403）
+
+    若系统设置 allow_guest_browse=true 且请求未带 token，
+    自动注入游客身份（仅当 guest_allowed=True 时）。
+    """
+    from functools import wraps
+    def deco(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            payload = _parse_token()
+            if not payload:
+                # 无 token：若开启游客模式且本接口允许游客，注入游客身份
+                if guest_allowed and _is_guest_enabled():
+                    payload = _guest_payload()
+                else:
+                    return jsonify({"error": "未登录或登录已过期"}), 401
+            role = payload.get("role", "user")
+            if admin_only and role != "admin":
+                return jsonify({"error": "需要管理员权限"}), 403
+            if not guest_allowed and role == "guest":
+                return jsonify({"error": "游客无权访问该功能，请登录"}), 403
+            g.user = payload
+            return fn(*args, **kwargs)
+        return wrapper
+    return deco
+
+
+# ============================================================
 # 数据源统计
 # ============================================================
 @app.route("/api/data/source_stats")
@@ -1148,190 +1333,6 @@ def ddpg_tasks():
             "created_at": t.get("created_at"),
         })
     return jsonify({"tasks": tasks})
-
-
-# ============================================================
-# 用户系统 + 历史记录 + 数据管理（统一扩展模块）
-# ------------------------------------------------------------
-# - SQLite 持久化：users / history / settings 三张表
-# - JWT 鉴权：登录签发 token，受保护接口通过 @login_required 校验
-# - 角色：admin（管理员）/ user（普通用户）
-# - 历史：训练/预测完成自动落库，支持按时间/算法/用户筛选 + 导出
-# - 数据管理：对当前数据源做行级增删改查 + 批量导入 + 导出
-# ============================================================
-
-DB_PATH = os.path.join(config.BASE_DIR, "forge.db")
-JWT_SECRET = "forge-hv-secret-key-2026"  # 本地演示用，可改环境变量
-JWT_EXP_HOURS = 24
-
-_DB_LOCK = threading.Lock()
-
-
-def _get_db():
-    """获取 SQLite 连接（行级结果可按列名访问）"""
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def _init_db():
-    """初始化数据库表"""
-    with _DB_LOCK:
-        conn = _get_db()
-        c = conn.cursor()
-        # 用户表
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                salt TEXT NOT NULL,
-                role TEXT NOT NULL DEFAULT 'user',
-                display_name TEXT,
-                email TEXT,
-                created_at TEXT NOT NULL,
-                last_login TEXT
-            )
-        """)
-        # 历史预测记录表
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                username TEXT,
-                task_type TEXT,
-                algorithm TEXT,
-                data_source TEXT,
-                metrics TEXT,
-                params TEXT,
-                n_samples INTEGER,
-                duration_sec REAL,
-                status TEXT,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY(user_id) REFERENCES users(id)
-            )
-        """)
-        # 系统设置表（key-value）
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT,
-                updated_at TEXT NOT NULL,
-                updated_by TEXT
-            )
-        """)
-        conn.commit()
-
-        # 首次启动自动创建默认 admin 账号
-        c.execute("SELECT COUNT(*) AS n FROM users")
-        if c.fetchone()["n"] == 0:
-            _create_user_internal(c, "admin", "admin123", "admin", "管理员", "admin@forge.local")
-            print("[init] 已创建默认管理员账号 admin / admin123")
-
-        conn.commit()
-        conn.close()
-
-
-def _hash_password(password: str, salt: str = None) -> tuple:
-    """密码加盐 SHA-256 哈希（本地演示级，生产建议用 bcrypt）"""
-    if salt is None:
-        salt = secrets.token_hex(16)
-    h = hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
-    return h, salt
-
-
-def _create_user_internal(c, username, password, role="user", display_name=None, email=None):
-    """内部工具：在已打开的 cursor 上创建用户"""
-    h, salt = _hash_password(password)
-    c.execute(
-        "INSERT INTO users (username, password_hash, salt, role, display_name, email, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (username, h, salt, role, display_name, email, datetime.now().isoformat())
-    )
-
-
-def _generate_token(user_row) -> str:
-    """签发 JWT token"""
-    if not _HAS_JWT:
-        return "no-jwt-" + secrets.token_hex(16)
-    payload = {
-        "user_id": user_row["id"],
-        "username": user_row["username"],
-        "role": user_row["role"],
-        "exp": datetime.utcnow() + timedelta(hours=JWT_EXP_HOURS),
-    }
-    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
-
-
-def _parse_token() -> dict:
-    """从请求头解析 token，失败返回 None"""
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        return None
-    token = auth[7:]
-    if not _HAS_JWT:
-        return None
-    try:
-        return jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-    except Exception:
-        return None
-
-
-def _guest_payload() -> dict:
-    """构造游客虚拟身份（role=guest，user_id=0）"""
-    return {
-        "user_id": 0,
-        "username": "guest",
-        "role": "guest",
-        "exp": datetime.utcnow() + timedelta(hours=JWT_EXP_HOURS),
-    }
-
-
-def _is_guest_enabled() -> bool:
-    """读取系统设置 allow_guest_browse，判断是否开放游客浏览"""
-    try:
-        with _DB_LOCK:
-            conn = _get_db()
-            row = conn.execute("SELECT value FROM settings WHERE key = ?", ("allow_guest_browse",)).fetchone()
-            conn.close()
-        if row:
-            return str(row["value"]).lower() == "true"
-    except Exception:
-        pass
-    return _DEFAULT_SETTINGS["allow_guest_browse"].lower() == "true"
-
-
-def login_required(admin_only: bool = False, guest_allowed: bool = False):
-    """统一鉴权装饰器
-
-    参数：
-    - admin_only=True       仅管理员可访问（user/guest 都返回 403）
-    - guest_allowed=True    游客可访问（仅只读业务接口用）
-    - 两者都 False          需登录用户（admin/user 可访问，guest 返回 403）
-
-    若系统设置 allow_guest_browse=true 且请求未带 token，
-    自动注入游客身份（仅当 guest_allowed=True 时）。
-    """
-    from functools import wraps
-    def deco(fn):
-        @wraps(fn)
-        def wrapper(*args, **kwargs):
-            payload = _parse_token()
-            if not payload:
-                # 无 token：若开启游客模式且本接口允许游客，注入游客身份
-                if guest_allowed and _is_guest_enabled():
-                    payload = _guest_payload()
-                else:
-                    return jsonify({"error": "未登录或登录已过期"}), 401
-            role = payload.get("role", "user")
-            if admin_only and role != "admin":
-                return jsonify({"error": "需要管理员权限"}), 403
-            if not guest_allowed and role == "guest":
-                return jsonify({"error": "游客无权访问该功能，请登录"}), 403
-            g.user = payload
-            return fn(*args, **kwargs)
-        return wrapper
-    return deco
 
 
 # ------------------------------------------------------------
