@@ -1,3 +1,33 @@
+/**
+ * @file app.js  ——  FORGE-HV 前端交互逻辑核心文件
+ *
+ * 作用：
+ *   - FORGE-HV 高温合金维氏硬度（HV）预测平台的全部前端交互逻辑
+ *   - 处理用户交互（导航、滑块、按钮）、调用后端 API、渲染数据图表、管理页面状态
+ *
+ * 核心功能模块：
+ *   - 导航路由（navigate / hashchange）：14 个功能页的切换与状态恢复
+ *   - API 封装（api）：基于 fetch + AbortController，统一超时与离线提示
+ *   - 数据可视化：Chart.js 绘制箱线/小提琴/直方/气泡/雷达/散点等图表
+ *   - 交互式散点图：ECharts 实现缩放、框选、悬停详情（renderInteractiveScatter）
+ *   - 单一模型训练 / 模型比较 / DDPG 强化学习 / 主动学习
+ *   - 数据预处理：异常值、重复值、缺失值、PCA、特征重要性、聚类
+ *   - 系统监控（类任务管理器）：CPU / 内存实时曲线
+ *
+ * 依赖：
+ *   - 原生 JavaScript（无框架）
+ *   - Chart.js（图表库，由 index.html 引入）
+ *   - ECharts（交互式散点图，由 index.html 引入）
+ *
+ * API 调用：
+ *   - 通过 fetch 调用后端 http://127.0.0.1:5000 的 RESTful 接口
+ *   - 离线时显示模拟数据并禁用按钮，保证界面可浏览
+ *
+ * 运行环境：
+ *   - 浏览器，由 frontend/index.html 以 <script> 标签引入
+ *   - 全局对象：window._lastScatterData、window._chartType 等用于跨函数缓存
+ */
+
 /* ============ NAV ============ */
 const crumbCat={dashboard:'Data',outliers:'Data',database:'Data',duplicates:'Features',correlation:'Features',selection:'Features',importance:'Features',missing:'Features',clustering:'Unsupervised',single:'Regression',compare:'Regression',ddpg:'Regression',active:'Active',codeopt:'System'};
 const pageNames={dashboard:'数据可视化',outliers:'异常值检测',database:'数据库管理',duplicates:'重复值处理',correlation:'特征相关性',selection:'特征筛选与降维',importance:'特征重要性排序',missing:'缺失值处理',clustering:'聚类与降维',single:'单一模型',compare:'模型比较',ddpg:'深度强化学习',active:'单目标优化',codeopt:'代码优化'};
@@ -9,18 +39,22 @@ document.querySelectorAll('.nav-cat').forEach(cat=>{
 });
 
 const navItems=document.querySelectorAll('.nav-item');
-/* 路由跳转 —— 统一入口，同步 location.hash */
+/**
+ * 路由跳转 —— 统一入口，同步 location.hash
+ * 切换激活的导航项与页面容器，更新面包屑，并触发对应页面的 init 函数
+ * @param {string} p - 页面标识（dashboard/outliers/single/...）
+ */
 function navigate(p){
   const target=[...navItems].find(n=>n.dataset.page===p);
   if(!target)return;
-  navItems.forEach(n=>n.classList.remove('active'));
-  target.classList.add('active');
+  navItems.forEach(n=>n.classList.remove('active'));   // 清除所有导航项激活态
+  target.classList.add('active');                       // 激活目标项
   document.querySelectorAll('.page').forEach(pg=>pg.classList.remove('active'));
   const pageEl=document.getElementById('page-'+p);
-  if(pageEl)pageEl.classList.add('active');
-  document.getElementById('crumb-cat').textContent=crumbCat[p]||'';
-  document.getElementById('crumb-page').textContent=pageNames[p]||target.textContent.trim();
-  document.getElementById('content').scrollTop=0;
+  if(pageEl)pageEl.classList.add('active');             // 显示目标页面
+  document.getElementById('crumb-cat').textContent=crumbCat[p]||'';          // 面包屑分类
+  document.getElementById('crumb-page').textContent=pageNames[p]||target.textContent.trim();  // 面包屑页名
+  document.getElementById('content').scrollTop=0;       // 内容区回到顶部
   if(p==='dashboard')initDashboard();
   if(p==='outliers')initOutliers();
   if(p==='database')initDatabase();
@@ -47,6 +81,11 @@ window.addEventListener('hashchange',()=>{
 });
 
 /* ============ TOAST ============ */
+/**
+ * 弹出 Toast 通知
+ * @param {string} msg - 通知内容（支持 HTML）
+ * @param {string} [type] - 类型：'warn' | 'error' | 'ok'，决定左边框颜色
+ */
 function toast(msg,type){
   const t=document.createElement('div');t.className='toast';
   t.innerHTML=msg+'<div class="toast-progress"></div>';
@@ -55,7 +94,7 @@ function toast(msg,type){
   else if(type==='error')t.style.borderLeftColor='var(--danger)';
   else if(type==='ok')t.style.borderLeftColor='var(--success)';
   document.getElementById('toasts').appendChild(t);
-  setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(20px)';t.style.transition='.3s ease';setTimeout(()=>t.remove(),300)},2600);
+  setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(20px)';t.style.transition='.3s ease';setTimeout(()=>t.remove(),300)},2600);  // 2.6s 后渐隐移除
 }
 
 /* ============ DATA ============ */
@@ -80,9 +119,16 @@ Chart.defaults.font.family='IBM Plex Mono';
 Chart.defaults.font.size=10;
 
 /* ============ iOS ANIMATION ENGINE ============ */
+/* 动画引擎：检测用户偏好，提供数字滚动、按钮涟漪等微交互 */
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /* ── CountUp Animation ── */
+/**
+ * 数字滚动动画：从 0 缓动到 target，支持前后缀与小数位
+ * @param {HTMLElement} el - 显示数字的元素
+ * @param {number} target - 目标数值
+ * @param {Object} [opts] - 选项：duration/prefix/suffix/decimals
+ */
 function countUp(el, target, opts = {}) {
   if (prefersReducedMotion || !el) { if(el) el.textContent = target; return; }
   const { duration = 800, prefix = '', suffix = '', decimals = 0 } = opts;
@@ -101,6 +147,7 @@ function countUp(el, target, opts = {}) {
 }
 
 /* ── Ripple Effect for buttons ── */
+/* 按钮涟漪效果：根据点击位置设置 CSS 变量，由样式表绘制扩散圆 */
 document.addEventListener('pointerdown', (e) => {
   if (prefersReducedMotion) return;
   const btn = e.target.closest('.btn');
@@ -113,28 +160,40 @@ document.addEventListener('pointerdown', (e) => {
 }, { passive: true });
 
 /* ── Passive scroll listeners for performance ── */
+/* 被动滚动监听：标记为 passive 以避免阻塞主线程滚动 */
 window.addEventListener('load', () => {
   document.querySelector('.content')?.addEventListener('scroll', () => {}, { passive: true });
   document.querySelector('.nav')?.addEventListener('scroll', () => {}, { passive: true });
 });
 
 /* ============ API 配置 ============ */
+/* 后端基础地址、在线状态、请求超时时间 */
 const API_BASE='http://127.0.0.1:5000';
 let API_ONLINE=false;
 const API_TIMEOUT=15000; // 15s 超时
+/**
+ * 统一 API 调用封装：fetch + AbortController 超时控制
+ * 失败时返回 { error } 对象而非抛异常，便于调用方统一处理
+ * @param {string} path - 接口路径，如 '/api/data/stats'
+ * @param {Object} [opts] - fetch 配置（method/headers/body 等）
+ * @returns {Promise<Object>} 后端返回的 JSON，失败时为 { error: string }
+ */
 async function api(path,opts={}){
   try{
     const ctrl=new AbortController();
-    const timer=setTimeout(()=>ctrl.abort(),API_TIMEOUT);
+    const timer=setTimeout(()=>ctrl.abort(),API_TIMEOUT);   // 超时自动中断
     const r=await fetch(API_BASE+path,{...opts,signal:ctrl.signal});
     clearTimeout(timer);
-    API_ONLINE=true;
+    API_ONLINE=true;                                        // 标记后端在线
     return await r.json();
   }catch(e){
-    API_ONLINE=false;
+    API_ONLINE=false;                                       // 标记离线
     return {error: e.name==='AbortError'?'请求超时 (>15s)':'后端未启动'};
   }
 }
+/**
+ * 离线提示：弹出 Toast 并短暂禁用所有按钮，防止用户在无后端时反复点击
+ */
 function showOfflineHint(){
   if(!API_ONLINE){
     toast('⚠ 提示：后端未连接 · 显示模拟数据');
@@ -146,12 +205,20 @@ function showOfflineHint(){
     },1500);
   }
 }
-/* 骨架屏 —— 在容器内显示 shimmer 动画 */
+/**
+ * 骨架屏 —— 在容器内显示 shimmer 动画，提示用户数据加载中
+ * @param {string} selector - 容器选择器
+ * @param {string} [text] - 底部提示文字
+ */
 function showSkeleton(selector,text){
   const el=document.querySelector(selector);
   if(!el)return;
   el.innerHTML='<div class="skeleton-box"><div class="skeleton" style="height:14px;width:'+(60+Math.random()*30)+'%;margin-bottom:10px"></div><div class="skeleton" style="height:14px;width:'+(50+Math.random()*30)+'%;margin-bottom:10px"></div><div class="skeleton" style="height:14px;width:'+(70+Math.random()*20)+'%"></div><div style="text-align:center;color:var(--text-faint);font-size:11px;margin-top:14px;font-family:var(--mono)">'+(text||'加载中...')+'</div></div>';
 }
+/**
+ * 移除容器内的骨架屏元素
+ * @param {string} selector - 容器选择器
+ */
 function hideSkeleton(selector){
   const el=document.querySelector(selector);
   if(el){
@@ -161,18 +228,29 @@ function hideSkeleton(selector){
 }
 
 /* ============ DASHBOARD ============ */
+/* 数据可视化首页：元素分布、相关性矩阵、HV 直方图 */
 let dashInit=false;
 let distChart=null,corrChart=null,histChart=null;
 /* 全局图表实例注册表 —— 统一销毁管理，防止内存泄漏 */
 const CHARTS={}; // {id: chartInstance}
+/**
+ * 创建或重建 Chart.js 图表实例（重复创建会先销毁旧实例）
+ * @param {string} canvasId - canvas 元素 id
+ * @param {Object} config - Chart.js 配置对象
+ * @returns {Chart|null} 图表实例，元素不存在时返回 null
+ */
 function makeChart(canvasId,config){
-  if(CHARTS[canvasId]){try{CHARTS[canvasId].destroy()}catch(e){}}
+  if(CHARTS[canvasId]){try{CHARTS[canvasId].destroy()}catch(e){}}  // 销毁旧实例避免内存泄漏
   const el=document.getElementById(canvasId);
   if(!el)return null;
   CHARTS[canvasId]=new Chart(el,config);
   return CHARTS[canvasId];
 }
 
+/**
+ * 渲染元素含量分布图（boxplot / violin / histogram 三种模式）
+ * @param {string} type - 'boxplot' | 'violin' | 'histogram'
+ */
 function renderDistChart(type){
   const titles={boxplot:'元素含量四分位分布 (wt %)',violin:'元素含量小提琴分布 (wt %)',histogram:'元素含量中位数对比 (wt %)'};
 
@@ -189,7 +267,7 @@ function renderDistChart(type){
           title:{display:true,text:titles[type],color:'#f8fafc',font:{family:'Inter',size:13,weight:'500'},align:'start',padding:{bottom:14}}},
         scales:{
           x:{grid:{color:'rgba(255,255,255,.02)'},ticks:{color:'#475569'}},
-          y:{grid:{display:false},ticks:{color:'#94a3b8',font:{size:10}}}
+          y:{grid:{display:false},ticks:{color:'#94a3b8',font:{size:10},autoSkip:false}}
         }
       }
     });
@@ -220,7 +298,7 @@ function renderDistChart(type){
           title:{display:true,text:titles[type],color:'#f8fafc',font:{family:'Inter',size:13,weight:'500'},align:'start',padding:{bottom:14}}},
         scales:{
           x:{grid:{color:'rgba(255,255,255,.02)'},ticks:{color:'#475569'}},
-          y:{grid:{display:false},ticks:{color:'#94a3b8',font:{size:10}}}
+          y:{grid:{display:false},ticks:{color:'#94a3b8',font:{size:10},autoSkip:false}}
         }
       }
     });
@@ -238,33 +316,43 @@ function renderDistChart(type){
           tooltip:{callbacks:{label:c=>'中位数: '+c.raw.y.toFixed(3)+' wt %'}}},
         scales:{
           x:{grid:{color:'rgba(255,255,255,.02)'},ticks:{color:'#475569'}},
-          y:{grid:{display:false},ticks:{color:'#94a3b8',font:{size:10}}}
+          y:{grid:{display:false},ticks:{color:'#94a3b8',font:{size:10},autoSkip:false}}
         }
       }
     });
   }
 }
 
+/**
+ * 生成模拟的相关性矩阵（线性同余 PRNG，可复现）
+ * 仅用于 Dashboard 首页展示，真实矩阵由后端 /api/correlation/matrix 提供
+ * @param {number} seed - 随机种子
+ * @returns {number[][]} N×N 对称矩阵，对角线为 1
+ */
 function genCorrMatrix(seed){
   let s=seed;
-  const rand=()=>{s=(s*9301+49297)%233280;return s/233280};
+  const rand=()=>{s=(s*9301+49297)%233280;return s/233280};   // 线性同余 PRNG
   const N=ELEMENTS.length;
   const corr=[];
   for(let i=0;i<N;i++){
     corr.push([]);
     for(let j=0;j<N;j++){
-      if(i===j)corr[i].push(1);
-      else if(j<i)corr[i].push(corr[j][i]);
-      else corr[i].push(parseFloat((rand()*1.6-.8).toFixed(2)));
+      if(i===j)corr[i].push(1);                               // 对角线 = 1
+      else if(j<i)corr[i].push(corr[j][i]);                   // 利用对称性复用
+      else corr[i].push(parseFloat((rand()*1.6-.8).toFixed(2)));  // 范围 [-0.8, 0.8]
     }
   }
   return corr;
 }
 
+/**
+ * 渲染元素相关性气泡矩阵（按 method 切换种子模拟不同方法结果）
+ * @param {string} method - 'pearson' | 'spearman' | 'kendall'
+ */
 function renderCorrChart(method){
   const N=ELEMENTS.length;
   const seedMap={pearson:42,spearman:137,kendall:871};
-  const corr=genCorrMatrix(seedMap[method]||42);
+  const corr=genCorrMatrix(seedMap[method]||42);   // 不同方法用不同种子区分视觉
   const dataset=[];
   for(let i=0;i<N;i++)for(let j=0;j<N;j++){
     dataset.push({x:j,y:N-1-i,r:Math.abs(corr[i][j])*9,v:corr[i][j]});
@@ -279,13 +367,17 @@ function renderCorrChart(method){
         title:{display:true,text:'元素相关性矩阵（青=正相关 · 紫=负相关 · 气泡大小=|r|）',color:'#f8fafc',font:{family:'Inter',size:13,weight:'500'},align:'start',padding:{bottom:14}},
         tooltip:{callbacks:{label:c=>ELEMENTS[c.raw.x]+' ↔ '+ELEMENTS[N-1-c.raw.y]+' : '+c.raw.v}}},
       scales:{
-        x:{ticks:{color:'#94a3b8',stepSize:1,callback:v=>ELEMENTS[v]||''},grid:{color:'rgba(255,255,255,.02)'}},
-        y:{ticks:{color:'#94a3b8',stepSize:1,callback:v=>ELEMENTS[N-1-v]||''},grid:{color:'rgba(255,255,255,.02)'}}
+        x:{ticks:{color:'#94a3b8',stepSize:1,autoSkip:false,callback:v=>ELEMENTS[v]||''},grid:{color:'rgba(255,255,255,.02)'}},
+        y:{ticks:{color:'#94a3b8',stepSize:1,autoSkip:false,callback:v=>ELEMENTS[N-1-v]||''},grid:{color:'rgba(255,255,255,.02)'}}
       }
     }
   });
 }
 
+/**
+ * Dashboard 首页初始化（仅执行一次）
+ * 渲染分布图、HV 直方图、相关性矩阵，并绑定 chip 切换事件
+ */
 function initDashboard(){
   if(dashInit)return;dashInit=true;
   renderDistChart('boxplot');
@@ -330,7 +422,12 @@ function initDashboard(){
 }
 
 /* ============ SINGLE MODEL ============ */
+/* 单一模型训练页：选择算法 / 超参数 / 数据源 → 训练 → 散点图 / 下载 */
 let singleInit=false,scatterChart=null;
+/**
+ * 单一模型页初始化（仅一次）
+ * 渲染元素 chip、拉取数据统计、绑定数据源切换、训练按钮、滑块等交互
+ */
 function initSingle(){
   if(singleInit){renderPreview();return}singleInit=true;
 
@@ -359,6 +456,9 @@ function initSingle(){
   });
 
   // 数据源切换：显示/隐藏 GAN 权重滑块和清洗信息
+  /**
+   * 根据数据源下拉值刷新 UI：GAN 权重滑块、清洗信息卡、警告文案
+   */
   function updateDataSourceUI(){
     const src=document.getElementById('data-source-sel').value;
     const isGAN=(src!=='real');
@@ -443,10 +543,10 @@ function initSingle(){
     if(ffEl) body.feature_filter=ffEl.value;
     if(ttEl) body.target_transform=ttEl.classList.contains('on')?'log':'off';
     if(autoOn){
-      endpoint='/api/train/grid_search';
+      endpoint='/api/train/grid_search';   // 自动网格搜索：后端遍历参数空间
       body.cv_folds=+document.getElementById('cv-folds-slider').value;
     }else{
-      body.params=collectHyperParams();
+      body.params=collectHyperParams();     // 手动模式：提交用户填写的超参
     }
 
     const res=await api(endpoint,{
@@ -460,10 +560,10 @@ function initSingle(){
       return;
     }
     const m=res.test_metrics||{};
-    document.getElementById('m-r2').textContent=(m['R2_value']??0).toFixed(3);
+    document.getElementById('m-r2').textContent=(m['R2_value']??0).toFixed(3);   // 写入指标卡
     document.getElementById('m-rmse').textContent=(m['RMSE_value']??0).toFixed(1);
     document.getElementById('m-mae').textContent=(m['MAE_value']??0).toFixed(1);
-    scatterChart.data.datasets[0].data=res.scatter||[];
+    scatterChart.data.datasets[0].data=res.scatter||[];   // 更新散点图数据
     scatterChart.update();
 
     if(autoOn && res.best_params){
@@ -487,6 +587,10 @@ function initSingle(){
 }
 
 /* ============ 单一模型 · 下载 CSV ============ */
+/**
+ * 下载训练结果的预测 CSV（必须先训练一次）
+ * 后端返回 Blob，前端解析 Content-Disposition 提取文件名并触发下载
+ */
 async function downloadCSV(){
   const btn=document.getElementById('btn-download-csv');
   if(btn.disabled){toast('⚠ 请先训练一次模型');return;}
@@ -515,6 +619,10 @@ async function downloadCSV(){
 }
 
 /* ============ 单一模型 · 下载模型 pkl ============ */
+/**
+ * 下载训练好的模型 pkl 文件（必须先训练一次）
+ * 同 downloadCSV，使用 Blob + 临时 <a> 触发下载
+ */
 async function downloadModel(){
   const btn=document.getElementById('btn-download-model');
   if(btn.disabled){toast('⚠ 请先训练一次模型');return;}
@@ -544,6 +652,10 @@ async function downloadModel(){
 
 /* ============ 单一模型 · 图表类型切换 ============ */
 window._chartType='trad';  // 'trad' 或 'interactive'
+/**
+ * 切换散点图类型：'trad'=Chart.js 静态散点，'interactive'=ECharts 交互式
+ * @param {string} type - 'trad' | 'interactive'
+ */
 function switchChartType(type){
   window._chartType=type;
   const trad=document.getElementById('chip-chart-trad');
@@ -562,6 +674,11 @@ function switchChartType(type){
 
 /* ============ 单一模型 · 交互式散点图（ECharts，支持缩放/平移/框选/悬停） ============ */
 let _echartsScatter=null;  // ECharts 实例缓存
+/**
+ * 使用 ECharts 渲染交互式散点图（替代 Chart.js 静态版）
+ * 功能：滚轮缩放、底部滑块缩放、框选放大、按误差三色分组、对角线参考
+ * 数据源：window._lastScatterData（由训练成功回调写入）
+ */
 function renderInteractiveScatter(){
   const data=window._lastScatterData||[];
   const container=document.getElementById('scatter-interactive');
@@ -774,6 +891,9 @@ const HYPER_SCHEMA={
   ],
 };
 
+/**
+ * 根据当前算法渲染超参数表单字段（依据 HYPER_SCHEMA 配置动态生成）
+ */
 function renderHyperFields(){
   const algo=document.getElementById('algo-sel').value;
   const schema=HYPER_SCHEMA[algo]||[];
@@ -807,6 +927,10 @@ function renderHyperFields(){
   wrap.innerHTML=html;
 }
 
+/**
+ * 从表单收集用户填写的超参数（空值跳过，number 类型转数字）
+ * @returns {Object} 超参数键值对，提交训练时使用
+ */
 function collectHyperParams(){
   const algo=document.getElementById('algo-sel').value;
   const schema=HYPER_SCHEMA[algo]||[];
@@ -827,6 +951,9 @@ function collectHyperParams(){
   return params;
 }
 
+/**
+ * 切换「自动网格搜索」开关：开启时显示 CV 折数字段并禁用手动超参数面板
+ */
 function toggleAutoSearch(){
   const on=document.getElementById('auto-search-sw').classList.contains('on');
   document.getElementById('cv-field').style.display=on?'block':'none';
@@ -836,6 +963,10 @@ function toggleAutoSearch(){
   hyperCol.style.pointerEvents=on?'none':'auto';
 }
 
+/**
+ * 拉取并渲染数据预览表（按滑块行数）
+ * 后端失败时降级为模拟数据，保证界面可见
+ */
 async function renderPreview(){
   const tbl=document.getElementById('preview-table');
   const rows=+document.getElementById('row-slider').value;
@@ -873,7 +1004,12 @@ async function renderPreview(){
 }
 
 /* ============ COMPARE ============ */
+/* 模型比较页：批量训练多个算法，输出指标表 / 雷达图 / 主模型锁定 */
 let cmpInit=false;
+/**
+ * 模型比较页初始化（仅一次）
+ * 渲染初始雷达图、绑定 chip / 滑块 / 训练按钮事件
+ */
 function initCompare(){
   if(cmpInit)return;cmpInit=true;
 
@@ -955,6 +1091,10 @@ function initCompare(){
 }
 
 // 雷达图：按真实训练结果渲染（R² / CV-R² / 1/RMSE / 1/MAE / 训练速度 / 稳定性）
+/**
+ * 根据真实训练结果更新雷达图（六维指标归一化到 [0,1]）
+ * @param {Array<Object>} models - 训练结果数组，每项含 r2/rmse/mae/time/cv_r2_*
+ */
 function updateCompareRadar(models){
   const valid=models.filter(m=>m.r2!==null&&m.r2!==undefined);
   if(valid.length===0)return;
@@ -991,7 +1131,12 @@ function updateCompareRadar(models){
 }
 
 /* ============ ACTIVE LEARNING ============ */
+/* 主动学习页：训练代理模型 + 采集函数，推荐下一批高价值实验配方 */
 let alInit=false;
+/**
+ * 主动学习页初始化（仅一次）
+ * 绑定探索滑块、导出按钮、训练按钮事件
+ */
 function initActive(){
   if(alInit)return;alInit=true;
 
@@ -1037,6 +1182,10 @@ function initActive(){
     renderActiveResult(res);
   });
 
+  /**
+   * 渲染主动学习结果：顶部指标卡、模型信息、前沿散点图、推荐配方看板
+   * @param {Object} res - 后端返回结果，含 meta / recommendations / scatter
+   */
   function renderActiveResult(res){
     const meta=res.meta||{};
     const recs=res.recommendations||[];
@@ -1060,6 +1209,11 @@ function initActive(){
     toast('✓ 优化完成 · 推荐 '+recs.length+' 个配方');
   }
 
+  /**
+   * 渲染前沿散点图：x=预测 HV，y=不确定性 σ，普通样本与推荐样本分组高亮
+   * @param {Array} scatter - 设计空间样本点
+   * @param {Array} recs - 推荐配方数组
+   */
   function renderFrontier(scatter,recs){
     const normal=scatter.filter(p=>!p.recommended).map(p=>({x:p.pred,y:p.sigma}));
     const recommended=scatter.filter(p=>p.recommended).map(p=>({x:p.pred,y:p.sigma}));
@@ -1079,6 +1233,10 @@ function initActive(){
     });
   }
 
+  /**
+   * 渲染推荐配方看板（卡片网格），每张卡片显示排名 / 预测 HV / σ / 成分
+   * @param {Array} recs - 推荐配方数组
+   */
   function renderRecs(recs){
     const grid=document.getElementById('rec-grid');
     grid.innerHTML='';
@@ -1100,7 +1258,12 @@ function initActive(){
 }
 
 /* ============ OUTLIERS ============ */
+/* 异常值检测页：调用后端 IF/LOF 等算法，展示异常样本表 + 统计柱状图 */
 let olInit=false,olChart=null;
+/**
+ * 异常值检测页初始化（仅一次）
+ * 绑定 contamination 滑块与「运行检测」按钮，触发后端检测并渲染结果
+ */
 function initOutliers(){
   if(olInit){return}olInit=true;
   // contamination 滑块
@@ -1156,7 +1319,12 @@ function initOutliers(){
 }
 
 /* ============ DATABASE ============ */
+/* 数据库管理页：表结构展示 + 可视化查询（选列/筛选/排序/聚合） + 预设 */
 let dbInit=false,dbSchema=null;
+/**
+ * 数据库管理页初始化（仅一次）
+ * 拉取表结构填充下拉、绑定模式切换、筛选行、预设、查询按钮等
+ */
 function initDatabase(){
   if(dbInit)return;dbInit=true;
   // 加载初始信息
@@ -1170,6 +1338,12 @@ function initDatabase(){
     const allCols=(res.columns||[]).map(c=>c.name);
     const numCols=(res.columns||[]).filter(c=>c.type==='number').map(c=>c.name);
     // 填充列下拉
+    /**
+     * 向指定 select 元素填充列名选项
+     * @param {string} id - select 元素 id
+     * @param {string[]} cols - 列名数组
+     * @param {string} [placeholder] - 首项占位文案
+     */
     function fillSel(id,cols,placeholder){
       const sel=document.getElementById(id);
       if(placeholder)sel.innerHTML='<option value="">'+placeholder+'</option>';
@@ -1197,6 +1371,12 @@ function initDatabase(){
   });
 
   // 筛选条件
+  /**
+   * 添加一行筛选条件（列 / 操作符 / 值），含删除按钮
+   * @param {string} [col] - 默认列名
+   * @param {string} [op] - 默认操作符
+   * @param {string} [val] - 默认值
+   */
   function addFilterRow(col='',op='>',val=''){
     if(!dbSchema)return;
     const numCols=dbSchema.columns.filter(c=>c.type==='number').map(c=>c.name);
@@ -1235,6 +1415,10 @@ function initDatabase(){
   document.querySelectorAll('#db-quick .chip').forEach(c=>{
     c.addEventListener('click',()=>applyPreset(c.dataset.preset));
   });
+  /**
+   * 应用预设查询：设置模式 / 筛选 / 排序 / 聚合 / limit，并立即执行查询
+   * @param {string} name - 预设名（top10/hard/eleavg/count/sorted_hv/ni_range）
+   */
   function applyPreset(name){
     const p=PRESETS[name];if(!p)return;
     // 模式
@@ -1266,6 +1450,9 @@ function initDatabase(){
   });
 
   document.getElementById('db-run').addEventListener('click',runQuery);
+  /**
+   * 执行查询：根据当前 UI 构造 payload（select / aggregate），调用后端并渲染结果表
+   */
   async function runQuery(){
     const btn=document.getElementById('db-run');
     const mode=[...document.querySelectorAll('#db-mode .chip.on')].map(x=>x.dataset.mode)[0]||'select';
@@ -1325,7 +1512,12 @@ function initDatabase(){
 }
 
 /* ============ DUPLICATES ============ */
+/* 重复值处理页：区分「同配方不同温度的独立实验」与「真重复」，给出处理建议 */
 let dpInit=false,dpChart=null;
+/**
+ * 重复值处理页初始化（仅一次）
+ * 绑定检测按钮，调用后端检测并按温度后缀分组渲染表格与环形图
+ */
 function initDuplicates(){
   if(dpInit)return;dpInit=true;
   document.getElementById('dp-run').addEventListener('click',async()=>{
@@ -1368,6 +1560,11 @@ function initDuplicates(){
     const cols=res.columns||[];
     const nameIdx=cols.indexOf('Image_Name');
     // 解析温度后缀
+    /**
+     * 从样本名（如 Image_Name）末尾解析温度数字
+     * @param {string} name - 样本名
+     * @returns {number|null} 温度值，无后缀时返回 null
+     */
     function parseTemp(name){
       if(typeof name!=='string')return null;
       const m=name.match(/-(\d+)$/);
@@ -1423,7 +1620,11 @@ function initDuplicates(){
 }
 
 /* ============ CORRELATION PAGE ============ */
+/* 特征相关性页：调用后端真实相关性矩阵，展示气泡矩阵 + 高耦合对表格 */
 let corrPageInit=false,corrPageChart=null;
+/**
+ * 相关性页初始化（仅一次）：绑定方法 chip，默认加载 pearson
+ */
 function initCorrelation(){
   if(corrPageInit)return;corrPageInit=true;
   const methodChips=document.querySelectorAll('#corr-method-chips .chip');
@@ -1434,6 +1635,10 @@ function initCorrelation(){
       loadCorr(c.dataset.method);
     });
   });
+  /**
+   * 拉取并渲染相关性矩阵与高耦合对
+   * @param {string} method - 'pearson' | 'spearman' | 'kendall'
+   */
   async function loadCorr(method){
     toast('▶ 加载 '+method+' 相关性矩阵...');
     showSkeleton('#corr-pairs-table','计算 '+method+' 矩阵中...');
@@ -1479,13 +1684,21 @@ function initCorrelation(){
 }
 
 /* ============ PCA / SELECTION ============ */
+/* 特征筛选与降维页：PCA 主成分分析，展示方差解释曲线与建议维度 */
 let pcaInit=false,pcaChart=null;
+/**
+ * PCA 降维页初始化（仅一次）：绑定滑块与运行按钮，默认加载 10 维
+ */
 function initSelection(){
   if(pcaInit)return;pcaInit=true;
   const slider=document.getElementById('pca-slider');
   const val=document.getElementById('pca-slider-val');
   slider.addEventListener('input',()=>{val.textContent=slider.value});
   document.getElementById('pca-run').addEventListener('click',()=>loadPCA(+slider.value));
+  /**
+   * 拉取 PCA 结果并渲染：方差解释表 + 累积方差曲线 + 建议维度（≥90%）
+   * @param {number} n - 主成分个数
+   */
   async function loadPCA(n){
     toast('▶ 计算 PCA (n='+n+')...');
     showSkeleton('#pca-table','PCA 降维中...');
@@ -1534,7 +1747,11 @@ function initSelection(){
 }
 
 /* ============ IMPORTANCE ============ */
+/* 特征重要性页：训练 ExtraTrees 计算元素对 HV 的贡献度，输出横向条形图与 Top-5 卡片 */
 let impInit=false,impChart=null;
+/**
+ * 特征重要性页初始化（仅一次）：绑定运行按钮
+ */
 function initImportance(){
   if(impInit)return;impInit=true;
   document.getElementById('imp-run').addEventListener('click',async()=>{
@@ -1593,7 +1810,11 @@ function initImportance(){
 }
 
 /* ============ MISSING ============ */
+/* 缺失值处理页：统计各列缺失率，支持均值/中位数/众数等策略填充 */
 let msInit=false,msChart=null;
+/**
+ * 缺失值处理页初始化（仅一次）：绑定刷新与填充按钮
+ */
 function initMissing(){
   if(msInit)return;msInit=true;
   loadStats();
@@ -1613,6 +1834,9 @@ function initMissing(){
     toast('✓ 填充完成 · '+res.before+' → '+res.after+'（剩余 '+(res.rows_remaining)+' 行）');
     setTimeout(loadStats,500);
   });
+  /**
+   * 拉取并渲染缺失值统计：指标卡、各列缺失率表格、缺失率柱状图
+   */
   async function loadStats(){
     toast('▶ 重新统计缺失值...');
     showSkeleton('#ms-table','统计缺失值中...');
@@ -1656,14 +1880,22 @@ function initMissing(){
 }
 
 /* ============ CLUSTERING ============ */
+/* 聚类与降维页：K-Means 聚类 + PCA 2D 投影，展示簇散点图与统计表 */
 let clInit=false,clChart=null;
 const CL_COLORS=['#0A84FF','#5E5CE6','#30D158','#FF9F0A','#FF453A','#64D2FF','#BF5AF2','#FF375F'];
+/**
+ * 聚类页初始化（仅一次）：绑定 k 滑块与运行按钮，默认加载 k=4
+ */
 function initClustering(){
   if(clInit)return;clInit=true;
   const slider=document.getElementById('cl-slider');
   const val=document.getElementById('cl-slider-val');
   slider.addEventListener('input',()=>{val.textContent=slider.value});
   document.getElementById('cl-run').addEventListener('click',()=>loadClusters(+slider.value));
+  /**
+   * 拉取 K-Means 聚类结果并渲染：簇统计表 + PCA 2D 散点图（按簇着色）
+   * @param {number} k - 簇个数
+   */
   async function loadClusters(k){
     toast('▶ 运行 K-Means (k='+k+')...');
     const btn=document.getElementById('cl-run');
@@ -1729,7 +1961,11 @@ function initClustering(){
 }
 
 /* ============ DDPG 深度强化学习 ============ */
+/* DDPG 页：异步训练 + 轮询状态，实时更新损失曲线与测试集散点图 */
 let ddpgInit=false,ddpgLossChart=null,ddpgScatterChart=null,ddpgPollTimer=null,ddpgCurrentTaskId=null;
+/**
+ * DDPG 页初始化（仅一次）：绑定开始/刷新按钮，注册 visibilitychange 暂停轮询
+ */
 function initDDPG(){
   if(ddpgInit)return;ddpgInit=true;
 
@@ -1741,6 +1977,9 @@ function initDDPG(){
     else{toast('没有进行中的任务','warn');}
   });
 
+  /**
+   * 启动 DDPG 异步训练：POST 参数到后端，拿到 task_id 后开始轮询
+   */
   async function startDDPG(){
     const body={
       data_source:document.getElementById('ddpg-data-source').value,
@@ -1770,15 +2009,24 @@ function initDDPG(){
     }
   }
 
+  /**
+   * 启动状态轮询：先立即查一次，再每 2s 轮询一次
+   */
   function startPolling(){
     stopPolling();
     pollDDPGStatus();
     ddpgPollTimer=setInterval(pollDDPGStatus,2000);  // 2秒轮询
   }
+  /**
+   * 停止轮询：清除定时器
+   */
   function stopPolling(){
     if(ddpgPollTimer){clearInterval(ddpgPollTimer);ddpgPollTimer=null;}
   }
 
+  /**
+   * 拉取训练状态并更新 UI：状态标签 / 设备 / 进度 / 损失曲线 / 完成或错误处理
+   */
   async function pollDDPGStatus(){
     if(!ddpgCurrentTaskId)return;
     const res=await api('/api/ddpg/status/'+ddpgCurrentTaskId);
@@ -1929,7 +2177,11 @@ function initDDPG(){
 }
 
 /* ============ CODE OPT (类 Windows 任务管理器) ============ */
+/* 代码优化页：实时显示 CPU/内存曲线（类任务管理器）、PyTorch/CUDA 信息、优化建议 */
 let coInit=false,coCpuChart=null,coMemChart=null;
+/**
+ * 代码优化页初始化（仅一次）：每秒拉取系统信息，更新曲线与指标卡
+ */
 function initCodeOpt(){
   if(coInit)return;coInit=true;
   // 独立的历史数据缓冲
@@ -1957,10 +2209,16 @@ function initCodeOpt(){
     }
   });
 
+  /**
+   * 启动监控定时器：每秒拉取一次系统信息
+   */
   function startMonitor(){
     stopMonitor();
     monitorTimer=setInterval(loadSysInfo,1000);
   }
+  /**
+   * 停止监控定时器
+   */
   function stopMonitor(){
     if(monitorTimer){clearInterval(monitorTimer);monitorTimer=null;}
   }
@@ -1971,6 +2229,11 @@ function initCodeOpt(){
   startMonitor();
 
   // 渐变填充函数：曲线下方从 50% 透明度渐变到完全透明
+  /**
+   * 返回一个 Chart.js backgroundColor 回调，根据 chartArea 动态生成垂直渐变
+   * @param {string} hexColor - 基色（hex 格式，如 '#409CFF'）
+   * @returns {Function} backgroundColor 回调
+   */
   function gradFn(hexColor){
     return function(ctx){
       const chart=ctx.chart;
@@ -1984,6 +2247,13 @@ function initCodeOpt(){
   }
 
   // 构建单个 Task Manager 风格图表
+  /**
+   * 构建类任务管理器折线图：无动画、隐藏时间轴、Y 轴 0-100%
+   * @param {string} canvasId - canvas 元素 id
+   * @param {number[]} dataArr - 历史数据数组
+   * @param {string} color - 折线颜色
+   * @returns {Chart} Chart.js 实例
+   */
   function buildTmChart(canvasId,dataArr,color){
     return makeChart(canvasId,{
       type:'line',
@@ -2017,6 +2287,10 @@ function initCodeOpt(){
     });
   }
 
+  /**
+   * 拉取系统信息：CPU/内存/GPU/PyTorch 版本，更新指标卡并追加历史数据点
+   * 数据点超过 MAX_POINTS 时滚动移除最旧值
+   */
   async function loadSysInfo(){
     const res=await api('/api/system/info');
     if(res.error){return}
@@ -2062,6 +2336,9 @@ function initCodeOpt(){
     }
   }
 
+  /**
+   * 拉取并渲染优化建议表（参数推荐值与依据），仅加载一次
+   */
   async function loadRecommend(){
     if(recommendLoaded)return;
     const res=await api('/api/system/recommend');
@@ -2084,6 +2361,7 @@ function initCodeOpt(){
 }
 
 /* ============ SIDEBAR TOGGLE ============ */
+/* 侧边栏折叠按钮：切换 .collapsed 类并更新箭头方向与 title */
 (function(){
   const toggle=document.getElementById('sidebar-toggle');
   if(!toggle)return;
@@ -2099,8 +2377,8 @@ function initCodeOpt(){
 /* 启动时根据 hash 恢复页面 —— 刷新后仍停留在原页 */
 const initialPage=(location.hash||'').replace('#','');
 if(initialPage && document.getElementById('page-'+initialPage)){
-  navigate(initialPage);
+  navigate(initialPage);   // 恢复 hash 对应的页面
 }else{
-  initDashboard();
+  initDashboard();         // 无 hash 默认进首页
 }
 toast('✓ FORGE 系统就绪 · Premium 主题已启用');

@@ -1,8 +1,74 @@
 # -*- coding: utf-8 -*-
 """
 FORGE 后端服务 —— 高温合金机器学习实验台 API
-启动：python app.py
-默认端口：5000
+====================================================================
+
+文件作用
+--------
+Flask 后端服务，为 FORGE-HV 高温合金机器学习实验台前端提供数据可视化、
+特征工程、回归模型训练/预测、模型横向比较、DDPG 强化学习、主动学习优化等
+REST API。
+
+核心功能
+--------
+1. 数据可视化与统计：列名、预览、统计摘要、缺失值、相关性矩阵、PCA 降维
+2. 异常检测：IsolationForest / IQR / Z-score 三种方法
+3. 重复值检测：按成分列去重，结合 Image_Name 后缀识别独立实验
+4. 特征工程：特征筛选（auto / importance）、PCA、特征重要性
+5. 回归模型训练：14 种回归器（LinearRegression / Ridge / Lasso / SVR /
+   RandomForest / ExtraTrees / GBDT / AdaBoost / Bagging / MLP / XGBoost /
+   Stacking / GaussianProcess / KernelRidge 等），支持手动超参与 GridSearchCV
+6. 模型横向比较：在统一数据划分上跑多个模型 + K 折交叉验证
+7. DDPG 强化学习：基于 PyTorch 的简化 DDPG，异步训练 + 状态轮询
+8. 主动学习优化：训练代理模型 → 拉丁超立方采样生成设计空间 →
+   acquisition function（greedy / ei / ucb / thompson / bayes）筛选推荐样本
+9. 数据库式查询：结构化查询构建器（columns / filters / order_by / aggregate）
+
+主要路由（@app.route）
+--------------------
+- GET  /api/health                  健康检查
+- GET  /api/data/source_stats       数据源统计（实测/GAN/混合条数）
+- GET  /api/data/columns            数据列名
+- GET  /api/data/preview            数据预览
+- GET  /api/data/stats              统计摘要
+- POST /api/train/traditional       传统回归模型训练
+- POST /api/train/grid_search       网格搜索超参优化
+- POST /api/train/compare           多模型横向比较
+- GET  /api/train/export_csv         导出预测结果 CSV
+- GET  /api/train/export_model      导出模型 pkl
+- POST /api/outliers/detect         异常值检测
+- GET  /api/duplicates/detect       重复值检测
+- GET  /api/correlation/matrix     相关性矩阵
+- GET  /api/features/pca           PCA 降维
+- GET  /api/features/importance    特征重要性
+- GET  /api/missing/stats          缺失值统计
+- POST /api/missing/fill            缺失值填充
+- POST /api/clustering/kmeans      KMeans 聚类
+- POST /api/database/query         数据库式结构化查询
+- GET  /api/database/schema        数据表结构
+- POST /api/active/optimize        主动学习优化
+- GET  /api/active/export_csv      导出推荐样本 CSV
+- GET  /api/system/info            系统信息
+- GET  /api/system/recommend       训练参数推荐
+- POST /api/ddpg/train             启动 DDPG 异步训练
+- GET  /api/ddpg/status/<task_id>  查询 DDPG 训练进度
+- GET  /api/ddpg/tasks             列出全部 DDPG 任务
+
+依赖
+----
+- Flask, flask-cors        : Web 框架与跨域支持
+- pandas, numpy            : 数据处理
+- scikit-learn (sklearn)  : 传统机器学习
+- xgboost                  : 可选，XGBoost 回归
+- torch (PyTorch)          : 可选，DDPG 强化学习
+- scipy                    : 统计工具（zscore / norm）
+- joblib                   : 模型序列化
+- psutil                   : 系统状态查询
+
+运行方式
+--------
+    python app.py
+默认监听 127.0.0.1:5000，开发模式 debug=True
 """
 import os
 import sys
@@ -21,6 +87,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config
 from CT_main import load_and_filter_gan_data, prepare_gan_features, calculate_metrics
 
+# 第三方机器学习库
 import sklearn
 import joblib
 from sklearn.model_selection import train_test_split
@@ -36,13 +103,14 @@ from sklearn.neural_network import MLPRegressor
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel
 from sklearn.kernel_ridge import KernelRidge
+# XGBoost 为可选依赖：未安装时回退到其他树模型
 try:
     from xgboost import XGBRegressor
     _HAS_XGBOOST = True
 except ImportError:
     _HAS_XGBOOST = False
 
-# DDPG (PyTorch) —— 可选依赖
+# DDPG (PyTorch) —— 可选依赖，仅在 /api/ddpg/* 路由用到
 try:
     import torch
     import torch.nn as nn
@@ -54,6 +122,7 @@ except ImportError:
 app = Flask(__name__)
 CORS(app)  # 允许前端跨域访问
 
+# 目标变量列名：维氏硬度 HV
 TARGET_COL = "Vickers Hardness (HV)"
 
 # 训练结果缓存（最后一次训练的模型和预测数据，用于导出）
@@ -447,11 +516,12 @@ def safe_float(x):
 # ============================================================
 @app.route("/api/data/source_stats")
 def data_source_stats():
+    """统计数据源条数：实测总数 / 实测有效 / GAN 原始 / GAN 清洗后 / 混合总数"""
     try:
         # 实测
         real_df = pd.read_excel(config.DATA_FILE_MIC)
         real_sum = real_df[config.composition_columns].sum(axis=1)
-        real_valid = real_df[(real_sum >= 85) & (real_sum <= 115)]
+        real_valid = real_df[(real_sum >= 85) & (real_sum <= 115)]  # 成分总和在 85~115 之间为有效配方
         # GAN 原始
         gan_raw = pd.read_excel(config.GENERATED_DATA_PATH)
         # GAN 清洗后
@@ -474,6 +544,7 @@ def data_source_stats():
 # ============================================================
 @app.route("/api/health")
 def health():
+    """健康检查：返回服务状态、数据文件路径与是否存在"""
     return jsonify({
         "status": "ok",
         "service": "FORGE Backend",
@@ -487,6 +558,7 @@ def health():
 # ============================================================
 @app.route("/api/data/columns")
 def data_columns():
+    """返回数据表的列结构：成分列、目标列、全部列名、行数"""
     try:
         df = pd.read_excel(config.DATA_FILE_MIC)
         return jsonify({
@@ -504,9 +576,10 @@ def data_columns():
 # ============================================================
 @app.route("/api/data/preview")
 def data_preview():
+    """数据预览：返回前 n 行（默认 10，最大 500）的 Image_Name + 成分 + 目标"""
     try:
         n = int(request.args.get("n", 10))
-        n = max(1, min(n, 500))
+        n = max(1, min(n, 500))  # 限制 1~500 防止前端传超大值
         df = pd.read_excel(config.DATA_FILE_MIC)
 
         # 优先返回：序号 + 成分 + 目标（前端表格展示用）
@@ -529,6 +602,7 @@ def data_preview():
 # ============================================================
 @app.route("/api/data/stats")
 def data_stats():
+    """统计摘要：返回样本数、元素数、HV 的 min/max/mean/std/median（指标卡用）"""
     try:
         df = pd.read_excel(config.DATA_FILE_MIC)
         y = df[TARGET_COL].dropna()
@@ -550,15 +624,28 @@ def data_stats():
 # ============================================================
 @app.route("/api/train/traditional", methods=["POST"])
 def train_traditional():
+    """传统回归模型训练入口
+
+    请求体 JSON 字段：
+      model           : str  算法名（如 ExtraTreesRegressor）
+      test_size       : float 测试集比例，默认 config.TEST_SIZE，限制 0.05~0.5
+      params          : dict  手动超参数，会覆盖默认值
+      data_source     : str  数据源 real/gan/mix/gan_train_real_test/mix_train_real_test
+      gan_weight      : float GAN 样本权重 0~1
+      feature_filter  : str  特征筛选模式 off/auto/importance
+      target_transform: str  目标变换 off/log
+
+    返回：训练/测试指标、散点图数据、特征筛选结果、缓存训练结果以供导出
+    """
     try:
         req = request.get_json() or {}
         model_name = req.get("model", "ExtraTreesRegressor")
         test_size = float(req.get("test_size", config.TEST_SIZE))
-        test_size = max(0.05, min(test_size, 0.5))
+        test_size = max(0.05, min(test_size, 0.5))  # 限制测试集比例范围
         params = req.get("params", {}) or {}
         data_source = req.get("data_source", "real")  # real / gan / mix
         gan_weight = float(req.get("gan_weight", 0.2))
-        gan_weight = max(0.0, min(gan_weight, 1.0))
+        gan_weight = max(0.0, min(gan_weight, 1.0))  # GAN 权重范围 0~1
 
         # 清理 None 值
         params = {k: v for k, v in params.items() if v is not None and v != ""}
@@ -619,6 +706,7 @@ def train_traditional():
             "AdaBoostRegressor", "BaggingRegressor", "Ridge", "Lasso",
             "Ridge / Lasso", "BayesianRidge", "HuberRegressor"
         ):
+            # 仅对支持 sample_weight 的算法传入样本权重（混合数据源时 GAN 降权）
             try:
                 if isinstance(model, Pipeline):
                     model.fit(X_train, y_train, model__sample_weight=sw_train)
@@ -795,6 +883,17 @@ def train_export_model():
 # ============================================================
 @app.route("/api/train/grid_search", methods=["POST"])
 def train_grid_search():
+    """网格搜索超参优化（GridSearchCV + 数据源选择）
+
+    请求体 JSON 字段：
+      model       : str  算法名
+      test_size   : float 测试集比例
+      cv_folds    : int  交叉验证折数（2~10）
+      data_source : str  数据源
+      gan_weight  : float GAN 权重
+
+    返回：最优参数、CV R²、训练/测试指标、Top 20 候选组合
+    """
     try:
         from sklearn.model_selection import GridSearchCV
         req = request.get_json() or {}
@@ -931,6 +1030,17 @@ def train_grid_search():
 # ============================================================
 @app.route("/api/train/compare", methods=["POST"])
 def train_compare():
+    """多模型横向比较：在统一数据划分上跑多个模型 + K 折交叉验证
+
+    请求体 JSON 字段：
+      models           : list[str] 待比较的算法名列表
+      test_size        : float 测试集比例
+      cv_folds         : int   交叉验证折数
+      feature_filter   : str   特征筛选模式
+      target_transform : str   目标变换
+
+    返回：每个模型的 R²/RMSE/MAE/MAPE、CV 均值/方差、训练耗时，并标注最优模型
+    """
     try:
         from sklearn.model_selection import cross_val_score
         req = request.get_json() or {}
@@ -1028,6 +1138,14 @@ def train_compare():
 # ============================================================
 @app.route("/api/outliers/detect", methods=["POST"])
 def outliers_detect():
+    """异常值检测：支持 isolation_forest / iqr / zscore 三种方法
+
+    请求体 JSON 字段：
+      method       : str  检测方法（isolation_forest / iqr / zscore）
+      contamination: float 异常比例（仅 isolation_forest 用，默认 0.05）
+
+    返回：异常值索引、各列取值、Top 50 异常样本
+    """
     try:
         from sklearn.ensemble import IsolationForest
         req = request.get_json() or {}
@@ -1078,6 +1196,11 @@ def outliers_detect():
 # ============================================================
 @app.route("/api/duplicates/detect")
 def duplicates_detect():
+    """重复值检测：按成分列去重，结合 Image_Name 后缀识别独立实验
+
+    返回：成分重复的样本、独立实验组数（同成分但 Image_Name 不同）、真重复组数
+    （Image_Name 也相同，需处理）
+    """
     try:
         import re
         df = pd.read_excel(config.DATA_FILE_MIC)
@@ -1135,6 +1258,7 @@ def duplicates_detect():
 # ============================================================
 @app.route("/api/correlation/matrix")
 def correlation_matrix():
+    """返回成分列的相关性矩阵（pearson / spearman / kendall），并标注高相关列对"""
     try:
         method = request.args.get("method", "pearson")
         df = pd.read_excel(config.DATA_FILE_MIC)
@@ -1151,6 +1275,7 @@ def correlation_matrix():
 
 
 def _high_corr_pairs(corr, cols, threshold=0.7):
+    """从相关性矩阵中筛选 |r| >= threshold 的高相关列对，按相关性强度排序"""
     pairs = []
     for i in range(len(cols)):
         for j in range(i + 1, len(cols)):
@@ -1165,6 +1290,7 @@ def _high_corr_pairs(corr, cols, threshold=0.7):
 # ============================================================
 @app.route("/api/features/pca")
 def features_pca():
+    """PCA 主成分分析：标准化后做 PCA，返回各主成分方差解释比例与 Top 3 载荷元素"""
     try:
         n_components = int(request.args.get("n", 10))
         from sklearn.decomposition import PCA
@@ -1193,6 +1319,7 @@ def features_pca():
 # ============================================================
 @app.route("/api/features/importance")
 def features_importance():
+    """特征重要性：用 ExtraTrees 拟合成分→HV，返回各特征重要性排序与 Top 5"""
     try:
         df = pd.read_excel(config.DATA_FILE_MIC)
         cols = [c for c in config.composition_columns if c in df.columns]
@@ -1216,6 +1343,7 @@ def features_importance():
 # ============================================================
 @app.route("/api/missing/stats")
 def missing_stats():
+    """缺失值统计：返回每列缺失数、缺失率（默认只返回有缺失或目标列）"""
     try:
         df = pd.read_excel(config.DATA_FILE_MIC)
         cols = ["Image_Name"] + config.composition_columns + [TARGET_COL]
@@ -1243,6 +1371,10 @@ def missing_stats():
 
 @app.route("/api/missing/fill", methods=["POST"])
 def missing_fill():
+    """缺失值填充：支持 median / mean / knn / drop 四种策略
+
+    返回：填充前后的缺失数、剩余行数
+    """
     try:
         req = request.get_json() or {}
         strategy = req.get("strategy", "median")
@@ -1275,6 +1407,11 @@ def missing_fill():
 # ============================================================
 @app.route("/api/clustering/kmeans", methods=["POST"])
 def clustering_kmeans():
+    """KMeans 聚类：对成分数据聚类后用 PCA 降到 2 维返回散点
+
+    请求体 JSON 字段：
+      n_clusters : int  簇数（默认 4）
+    """
     try:
         from sklearn.cluster import KMeans
         from sklearn.decomposition import PCA
@@ -1659,6 +1796,7 @@ def active_export_csv():
 # ============================================================
 @app.route("/api/system/info")
 def system_info():
+    """系统状态：CPU/内存使用率、Python 版本、torch/CUDA 信息"""
     try:
         import psutil
         mem = psutil.virtual_memory()
@@ -1807,7 +1945,7 @@ def _run_ddpg_async(task_id, data_source, epochs, batch_size, lr_actor, lr_criti
         df = df.dropna(subset=feature_cols + [target_col])
         X = df[feature_cols].values
         y = df[target_col].values
-        y = np.clip(y, np.percentile(y, 1), np.percentile(y, 99))
+        y = np.clip(y, np.percentile(y, 1), np.percentile(y, 99))  # 截断 1%/99% 分位外的极端值，抗噪
 
         X_train_val, X_test, y_train_val, y_test = train_test_split(
             X, y, test_size=test_size, random_state=config.RANDOM_STATE
@@ -1816,6 +1954,7 @@ def _run_ddpg_async(task_id, data_source, epochs, batch_size, lr_actor, lr_criti
             X_train_val, y_train_val, test_size=0.15, random_state=config.RANDOM_STATE
         )
 
+        # 标准化：X 与 y 都做 z-score，便于神经网络训练；scaler 用训练集拟合后变换 val/test
         X_scaler = StandardScaler(); X_train_s = X_scaler.fit_transform(X_train)
         X_val_s = X_scaler.transform(X_val); X_test_s = X_scaler.transform(X_test)
         y_scaler = StandardScaler()
@@ -1858,20 +1997,20 @@ def _run_ddpg_async(task_id, data_source, epochs, batch_size, lr_actor, lr_criti
 
         opt_a = optim.AdamW(actor.parameters(), lr=lr_actor, weight_decay=1e-3)
         opt_c = optim.AdamW(critic.parameters(), lr=lr_critic, weight_decay=1e-3)
-        gamma = 0.995; tau = 0.001
+        gamma = 0.995; tau = 0.001  # gamma: 折扣因子；tau: 目标网络软更新系数
         y_min = y_train_s.min(); y_max = y_train_s.max()
 
         # 简单经验回放
         buf = []; cap = 10000
         def push(e):
             if len(buf) < cap: buf.append(e)
-            else: buf[np.random.randint(len(buf))] = e
+            else: buf[np.random.randint(len(buf))] = e  # 缓冲区满后随机覆盖
 
         task.update({"status":"running", "device": str(device), "n_train": len(y_train),
                      "n_val": len(y_val), "n_test": len(y_test), "n_features": s_dim})
 
         critic_losses = []; actor_losses = []
-        best_r2 = -np.inf; patience = 100; no_improve = 0
+        best_r2 = -np.inf; patience = 100; no_improve = 0  # early stopping: 连续 100 轮无提升则停止
 
         for epoch in range(epochs):
             # 收集经验（eval 模式避免 BatchNorm 单样本报错）
@@ -1882,11 +2021,11 @@ def _run_ddpg_async(task_id, data_source, epochs, batch_size, lr_actor, lr_criti
             for i in range(len(X_train_s)):
                 st = X_train_s[i]; tgt = y_train_s[i]
                 act = all_acts[i]
-                noise = np.random.normal(0, 0.2, act.shape)
-                act = np.clip(act + noise, -1, 1)
-                act_scaled = act * (y_max - y_min)/2 + (y_max + y_min)/2
+                noise = np.random.normal(0, 0.2, act.shape)  # OU-like 高斯噪声，鼓励探索
+                act = np.clip(act + noise, -1, 1)  # Actor 输出 tanh 限制在 [-1,1]
+                act_scaled = act * (y_max - y_min)/2 + (y_max + y_min)/2  # 反归一化到 y 真实尺度
                 err = abs(act_scaled - tgt)
-                # 奖励
+                # 奖励：误差越小奖励越高，分段线性递减；误差过大给负奖励
                 if err < 0.05: r = 5.0*(1-err/0.05)
                 elif err < 0.1: r = 3.0*(1-err/0.1)
                 elif err < 0.2: r = 2.0*(1-err/0.2)
@@ -1894,6 +2033,7 @@ def _run_ddpg_async(task_id, data_source, epochs, batch_size, lr_actor, lr_criti
                 else: r = -1.0*err
                 r = float(np.clip(r, -5, 10))
                 ni = np.random.randint(len(X_train_s))
+                # 经验元组：(s, a, r, s', done)；每 100 步标记一次 done
                 push((st, float(act), r, X_train_s[ni], 1.0 if (i+1)%100==0 else 0.0))
 
             # 更新
@@ -1906,19 +2046,23 @@ def _run_ddpg_async(task_id, data_source, epochs, batch_size, lr_actor, lr_criti
                 nss = torch.FloatTensor(np.stack([b[3] for b in batch])).to(device)
                 ds = torch.FloatTensor(np.array([b[4] for b in batch]).reshape(-1,1)).to(device)
 
+                # Critic 更新：TD 目标 = r + (1-done) * γ * Q'(s', a')
                 with torch.no_grad():
                     na = actor_target(nss)
                     tq = rs + (1-ds)*gamma*critic_target(nss, na)
                 cq = critic(sts, acts)
                 td = cq - tq
+                # Huber loss：小误差用 MSE，大误差用 MAE，抗异常值
                 cl = torch.where(td.abs()<1, 0.5*td**2, td.abs()-0.5).mean()
                 opt_c.zero_grad(); cl.backward()
-                torch.nn.utils.clip_grad_norm_(critic.parameters(), 0.5); opt_c.step()
+                torch.nn.utils.clip_grad_norm_(critic.parameters(), 0.5); opt_c.step()  # 梯度裁剪防爆炸
 
+                # Actor 更新：最大化 Q(s, a)，等价于最小化 -Q(s, μ(s))
                 al = -critic(sts, actor(sts)).mean()
                 opt_a.zero_grad(); al.backward()
                 torch.nn.utils.clip_grad_norm_(actor.parameters(), 0.5); opt_a.step()
 
+                # 目标网络软更新：θ' ← (1-τ)·θ' + τ·θ，平滑追踪主网络
                 for tp, p in zip(actor_target.parameters(), actor.parameters()):
                     tp.data.copy_(tp.data*(1-tau) + p.data*tau)
                 for tp, p in zip(critic_target.parameters(), critic.parameters()):

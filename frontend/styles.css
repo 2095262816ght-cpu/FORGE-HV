@@ -1,10 +1,30 @@
 /* ========================================================================
+   FORGE-HV 前端样式表 (styles.css)
+   ------------------------------------------------------------------------
+   文件作用：定义 FORGE-HV 项目所有页面的视觉呈现与交互样式
+   设计风格：Apple / iOS 设计语言
+             - 深色主题 (iOS Dark Mode)
+             - 毛玻璃效果 (Frosted Glass) + 柔和阴影 (Soft Shadows)
+             - 自然动效 (Natural Motion) + 精致细节 (Premium Polish)
+   配色方案：以 #000000 黑底为基调，搭配 Apple 系统调色板
+             (蓝色 #0A84FF 主强调色 + 紫色 / 钢青 / 翠绿等辅助色)
+   主要模块：根变量、布局、侧边栏、顶栏、内容区、
+             卡片 / 面板、表单控件、按钮、滑块、Chips、Switch、
+             指标卡片、数据表格、图表容器、任务管理面板、
+             折叠面板、标签、Toast 通知、页面切换动画、
+             推荐样本卡片、模型对比行、加载骨架屏
+   响应式：包含 @media 媒体查询
+            - 1280px：栅格降级
+            - 900px：移动端布局
+            - 560px：超小屏适配
+            - prefers-reduced-motion：无障碍降级动画
+   ========================================================================
    FORGE v3.0 — Apple / iOS Design Language
    Frosted Glass · Soft Shadows · Natural Motion · Premium Polish
    ======================================================================== */
 
 :root {
-  /* ── iOS Dark Mode Color System ── */
+  /* ── iOS 深色模式配色系统 ── */
   --bg-void: #000000;
   --bg-base: #1C1C1E;
   --bg-panel: rgba(44, 44, 46, 0.72);
@@ -16,7 +36,7 @@
   --text-dim: rgba(235, 235, 245, 0.6);
   --text-faint: rgba(235, 235, 245, 0.3);
 
-  /* ── Accent Colors — Apple System Palette ── */
+  /* ── 强调色 — Apple 系统调色板 ── */
   --ember: #0A84FF;
   --ember-hot: #409CFF;
   --ember-soft: rgba(10, 132, 255, 0.15);
@@ -28,20 +48,20 @@
   --violet: #BF5AF2;
   --rose: #FF375F;
 
-  /* ── Grid — unused, kept for compat ── */
+  /* ── 栅格背景 — 已弃用，仅为兼容性保留 ── */
   --grid: transparent;
 
-  /* ── Typography ── */
+  /* ── 字体 ── */
   --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', system-ui, sans-serif;
 
-  /* ── Shadows — soft, natural, no neon ── */
+  /* ── 阴影 — 柔和、自然、无霓虹感 ── */
   --shadow-sm: 0 1px 4px rgba(0,0,0,0.18);
   --shadow-md: 0 4px 16px rgba(0,0,0,0.28);
   --shadow-lg: 0 12px 40px rgba(0,0,0,0.4);
   --shadow-glow: 0 0 0 transparent;
 
-  /* ── Motion ── */
+  /* ── 动效缓动函数 ── */
   --ease-out: cubic-bezier(0.25, 0.46, 0.45, 0.94);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-ios: cubic-bezier(0.28, 0.11, 0.32, 1);
@@ -49,7 +69,7 @@
   --ease-decel: cubic-bezier(0, 0, 0.2, 1);
   --ease-overshoot: cubic-bezier(0.175, 0.885, 0.32, 1.275);
 
-  /* ── Radii ── */
+  /* ── 圆角 ── */
   --r-sm: 10px;
   --r-md: 14px;
   --r-lg: 18px;
@@ -57,7 +77,7 @@
   --r-pill: 100px;
 }
 
-/* ── Reset ── */
+/* ── 重置样式 ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
 html, body { height: 100% }
 body {
@@ -69,23 +89,23 @@ body {
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* Subtle ambient glow — like iOS wallpaper bleed */
+  /* 微弱的环境光晕 — 模拟 iOS 壁纸渗光效果 */
   background-image:
     radial-gradient(ellipse 70% 50% at 20% -10%, rgba(10,132,255,0.08), transparent 60%),
     radial-gradient(ellipse 60% 60% at 85% 110%, rgba(94,92,230,0.06), transparent 65%);
 }
 
-/* ============ LAYOUT ============ */
+/* ============ 布局 LAYOUT ============ */
 .app {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 260px 1fr; /* 侧栏 + 主区 两列布局 */
   height: 100vh;
   overflow: hidden;
   transition: grid-template-columns .4s var(--ease-ios);
 }
 .app > * { position: relative; z-index: 1 }
 
-/* ── Subtle dot grid overlay — very faint ── */
+/* ── 微弱点阵叠加层 — 非常淡 ── */
 .app::after {
   content: '';
   position: fixed; inset: 0;
@@ -96,7 +116,7 @@ body {
   opacity: .3;
 }
 
-/* ============ SIDEBAR ============ */
+/* ============ 侧边栏 SIDEBAR ============ */
 .sidebar {
   background: rgba(28, 28, 30, 0.82);
   background-image: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, transparent 50%);
@@ -109,10 +129,10 @@ body {
   min-height: 0;
   overflow: visible;
   will-change: transform;
-  transform: translateZ(0);
+  transform: translateZ(0); /* 强制 GPU 加速，避免毛玻璃滚动卡顿 */
 }
 
-/* ── Brand ── */
+/* ── 品牌区 Brand ── */
 .brand {
   padding: 26px 22px 22px;
   border-bottom: 1px solid rgba(255,255,255,0.06);
@@ -128,7 +148,7 @@ body {
   background: linear-gradient(135deg, var(--ember) 0%, var(--copper) 50%, var(--violet) 100%);
   -webkit-background-clip: text;
   background-clip: text;
-  color: transparent;
+  color: transparent; /* 文字渐变填充：将背景裁剪到文本范围 */
   display: inline-block;
   position: relative;
 }
@@ -163,19 +183,19 @@ body {
 }
 @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.35;transform:scale(0.85)} }
 
-/* ── Nav ── */
+/* ── 导航 Nav ── */
 .nav {
   flex: 1; min-height: 0;
   overflow-y: auto;
   padding: 14px 10px;
-  overscroll-behavior: contain;
+  overscroll-behavior: contain; /* 防止滚动外溢触发父级滚动 */
 }
-/* Scrollbars — thin, iOS style */
+/* 滚动条 — 细条，iOS 风格 */
 .nav::-webkit-scrollbar { width: 4px }
 .nav::-webkit-scrollbar-track { background: transparent }
 .nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px }
 .nav::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2) }
-.nav { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent }
+.nav { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent } /* Firefox 滚动条 */
 
 .nav-group { margin-bottom: 2px }
 .nav-cat {
@@ -229,7 +249,7 @@ body {
   background: var(--ember);
   border-radius: 0 3px 3px 0;
   box-shadow: 0 0 8px rgba(10,132,255,0.5);
-  animation: navGlow 2s ease-in-out infinite;
+  animation: navGlow 2s ease-in-out infinite; /* 左侧高亮条呼吸动画 */
 }
 @keyframes navGlow {
   0%,100% { box-shadow: 0 0 6px rgba(10,132,255,0.4); }
@@ -243,7 +263,7 @@ body {
 }
 .nav-item.active .ic { opacity: 1 }
 
-/* ── Sidebar footer ── */
+/* ── 侧边栏底栏 Sidebar footer ── */
 .sidebar-foot {
   padding: 14px 22px;
   border-top: 1px solid rgba(255,255,255,0.06);
@@ -252,9 +272,9 @@ body {
   background: rgba(0,0,0,0.15);
 }
 
-/* ── Sidebar toggle ── */
+/* ── 侧边栏折叠按钮 Sidebar toggle ── */
 .sidebar-toggle {
-  position: absolute; top: 50%; right: -14px;
+  position: absolute; top: 50%; right: -14px; /* 跨越侧栏右边界 */
   transform: translateY(-50%);
   width: 28px; height: 28px;
   background: var(--bg-base);
@@ -276,8 +296,8 @@ body {
   transform: translateY(-50%) scale(1.08);
 }
 
-/* ── Collapsed sidebar ── */
-.app.collapsed { grid-template-columns: 68px 1fr }
+/* ── 折叠状态下的侧边栏 Collapsed sidebar ── */
+.app.collapsed { grid-template-columns: 68px 1fr } /* 收窄到仅图标宽度 */
 .app.collapsed .sidebar .brand { padding: 16px 10px; text-align: center }
 .app.collapsed .sidebar .brand-mark { font-size: 16px }
 .app.collapsed .sidebar .brand-mark::after { display: none }
@@ -296,10 +316,10 @@ body {
   transition: all .35s var(--ease-ios);
 }
 
-/* ============ MAIN ============ */
+/* ============ 主体区 MAIN ============ */
 .main { display: flex; flex-direction: column; overflow: hidden }
 
-/* ── Topbar — frosted glass ── */
+/* ── 顶栏 — 毛玻璃 Topbar ── */
 .topbar {
   height: 52px;
   border-bottom: 1px solid rgba(255,255,255,0.06);
@@ -354,7 +374,7 @@ body {
   box-shadow: 0 0 6px rgba(48,209,88,0.4);
 }
 
-/* ── Content area ── */
+/* ── 内容区 Content area ── */
 .content {
   flex: 1; overflow-y: auto;
   padding: 28px 28px 60px;
@@ -363,9 +383,9 @@ body {
 .content::-webkit-scrollbar { width: 5px }
 .content::-webkit-scrollbar-track { background: transparent }
 .content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 3px; transition: background .3s }
-.content:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15) }
+.content:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15) } /* 悬停时显现 */
 
-/* ============ PAGE TITLES ============ */
+/* ============ 页面标题 PAGE TITLES ============ */
 .page-head {
   margin-bottom: 26px;
   display: flex; align-items: flex-end; justify-content: space-between;
@@ -383,7 +403,7 @@ body {
   font-style: normal;
   background: linear-gradient(135deg, var(--ember-hot), var(--steel), var(--violet));
   background-size: 200% 100%;
-  animation: gradientShift 5s ease infinite;
+  animation: gradientShift 5s ease infinite; /* 渐变流动动画 */
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -408,7 +428,7 @@ body {
   line-height: 1.65;
 }
 
-/* ============ CARDS / PANELS ============ */
+/* ============ 卡片 / 面板 CARDS / PANELS ============ */
 .card {
   background: rgba(44, 44, 46, 0.55);
   backdrop-filter: blur(24px) saturate(160%);
@@ -421,7 +441,7 @@ body {
   transition: box-shadow .3s var(--ease-ios), border-color .3s ease;
   will-change: transform;
   transform: translateZ(0);
-  contain: layout style paint;
+  contain: layout style paint; /* 性能优化：隔离布局 / 样式 / 绘制 */
 }
 .card::after {
   content: '';
@@ -459,7 +479,7 @@ body {
 }
 .card-body { padding: 20px }
 
-/* ============ FORMS ============ */
+/* ============ 表单 FORMS ============ */
 .field { margin-bottom: 16px }
 .field-label {
   display: block;
@@ -487,18 +507,18 @@ body {
 }
 .input:focus, .select:focus {
   border-color: var(--ember);
-  box-shadow: 0 0 0 3px rgba(10,132,255,0.2), 0 0 16px rgba(10,132,255,0.08);
+  box-shadow: 0 0 0 3px rgba(10,132,255,0.2), 0 0 16px rgba(10,132,255,0.08); /* 聚焦光晕 */
 }
 .select {
   appearance: none;
   cursor: pointer;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%230A84FF' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%230A84FF' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E"); /* 内嵌 SVG 下拉箭头 */
   background-repeat: no-repeat;
   background-position: right 14px center;
   padding-right: 34px;
 }
 
-/* ── Buttons — iOS style ── */
+/* ── 按钮 — iOS 风格 Buttons ── */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   font-family: var(--sans); font-size: 14px; font-weight: 600;
@@ -520,7 +540,7 @@ body {
   pointer-events: none;
 }
 .btn:active::after {
-  opacity: 1;
+  opacity: 1; /* 按下涟漪效果 */
   transition: opacity 0s;
 }
 .btn-primary {
@@ -534,7 +554,7 @@ body {
   transform: translateY(-1px);
 }
 .btn-primary:active {
-  transform: scale(0.96) translateY(0);
+  transform: scale(0.96) translateY(0); /* 按压缩放回弹 */
   box-shadow: 0 1px 6px rgba(10,132,255,0.2);
   transition: transform .1s var(--ease-rubber), box-shadow .1s;
 }
@@ -552,10 +572,10 @@ body {
   transition: transform .1s var(--ease-rubber);
 }
 
-/* ── Slider — iOS style ── */
+/* ── 滑块 — iOS 风格 Slider ── */
 .slider-row { display: flex; align-items: center; gap: 14px }
 .slider {
-  -webkit-appearance: none;
+  -webkit-appearance: none; /* 移除原生外观，便于跨浏览器统一 */
   flex: 1; height: 4px;
   background: rgba(255,255,255,0.12);
   border-radius: 4px;
@@ -577,7 +597,7 @@ body {
   transform: scale(1.15);
   box-shadow: 0 2px 10px rgba(0,0,0,0.4), 0 0 0 6px rgba(10,132,255,0.2), 0 0 20px rgba(10,132,255,0.15);
 }
-.slider::-moz-range-thumb {
+.slider::-moz-range-thumb { /* Firefox 兼容 */
   width: 22px; height: 22px;
   border-radius: 50%;
   background: #fff;
@@ -592,7 +612,7 @@ body {
   font-weight: 500;
 }
 
-/* ── Chips — iOS pill tags ── */
+/* ── Chips — iOS 胶囊标签 ── */
 .chips { display: flex; flex-wrap: wrap; gap: 6px }
 .chip {
   display: inline-flex; align-items: center; gap: 6px;
@@ -622,7 +642,7 @@ body {
 }
 .chip input { display: none }
 
-/* ── Switch — iOS toggle ── */
+/* ── Switch — iOS 开关 ── */
 .switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer }
 .switch-track {
   width: 44px; height: 26px;
@@ -645,19 +665,19 @@ body {
   background: var(--success);
 }
 .switch.on .switch-thumb {
-  left: 20px;
+  left: 20px; /* 开启时滑块右移 */
   background: #fff;
   box-shadow: 0 1px 4px rgba(0,0,0,0.2);
 }
 .switch:active .switch-thumb {
-  width: 26px;
+  width: 26px; /* 按下时变宽，模拟 iOS 弹性 */
 }
 .switch.on:active .switch-thumb {
   left: 16px;
 }
 .switch:hover .switch-track { opacity: .85 }
 
-/* ============ METRICS — iOS Widget Style ============ */
+/* ============ 指标卡片 METRICS — iOS 小组件风格 ============ */
 .metrics {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -688,6 +708,7 @@ body {
   opacity: 0;
   transition: opacity .3s ease;
 }
+/* 四个卡片各自配置不同的顶部渐变条 */
 .metric:nth-child(1)::before { background: linear-gradient(90deg, var(--ember), var(--steel)) }
 .metric:nth-child(2)::before { background: linear-gradient(90deg, var(--copper), var(--violet)) }
 .metric:nth-child(3)::before { background: linear-gradient(90deg, var(--amber), var(--rose)) }
@@ -718,7 +739,7 @@ body {
   margin-top: 8px;
 }
 
-/* ============ DATA TABLE — iOS List Style ============ */
+/* ============ 数据表格 DATA TABLE — iOS 列表风格 ============ */
 .table-wrap {
   overflow: auto; max-height: 340px;
   border: 1px solid rgba(255,255,255,0.06);
@@ -734,7 +755,7 @@ table.data th {
   background: rgba(58,58,60,0.7);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  position: sticky; top: 0; z-index: 2;
+  position: sticky; top: 0; z-index: 2; /* 表头吸顶 */
   padding: 10px 14px;
   text-align: left;
   font-weight: 600;
@@ -756,15 +777,15 @@ table.data tr:hover td {
   color: var(--text);
 }
 table.data tr:hover td:first-child {
-  box-shadow: inset 3px 0 0 var(--ember);
+  box-shadow: inset 3px 0 0 var(--ember); /* 行首高亮条 */
 }
 table.data td.tgt { color: var(--ember-hot); font-weight: 600 }
 table.data td.idx { color: var(--text-faint); width: 40px }
-table.data tbody tr:nth-child(even) td {
+table.data tbody tr:nth-child(even) td { /* 斑马纹 */
   background: rgba(255,255,255,0.015);
 }
 
-/* ============ DATA INFO (数据就绪状态) ============ */
+/* ============ 数据就绪状态 DATA INFO ============ */
 .data-info {
   display: flex; align-items: center; gap: 14px;
   padding: 18px 20px;
@@ -777,7 +798,7 @@ table.data tbody tr:nth-child(even) td {
 .di-name {
   font-family: var(--sans); font-size: 14px; font-weight: 600;
   color: var(--text);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; /* 单行省略号 */
 }
 .di-meta { font-size: 12px; color: var(--text-dim); margin-top: 3px }
 .di-status {
@@ -789,7 +810,7 @@ table.data tbody tr:nth-child(even) td {
   border-radius: 50%;
 }
 
-/* ============ TARGET BOX ============ */
+/* ============ 目标框 TARGET BOX ============ */
 .target-box {
   display: flex; align-items: center; gap: 12px;
   padding: 12px 16px;
@@ -808,17 +829,17 @@ table.data tbody tr:nth-child(even) td {
   border-radius: var(--r-pill);
 }
 
-/* ============ GRID HELPERS ============ */
+/* ============ 栅格辅助类 GRID HELPERS ============ */
 .grid { display: grid; gap: 18px }
 .g2 { grid-template-columns: repeat(2, 1fr) }
 .g3 { grid-template-columns: repeat(3, 1fr) }
-.g-split { grid-template-columns: 1.3fr 1fr }
+.g-split { grid-template-columns: 1.3fr 1fr } /* 主次栏比例 */
 
-/* ============ CHART CANVAS ============ */
+/* ============ 图表画布 CHART CANVAS ============ */
 .chart-box { position: relative; height: 300px }
-.chart-box.tall { height: 360px }
+.chart-box.tall { height: 480px }
 
-/* ============ TASK MANAGER PANEL ============ */
+/* ============ 任务管理面板 TASK MANAGER PANEL ============ */
 .tm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px }
 .tm-panel {
   background: rgba(0,0,0,0.3);
@@ -842,7 +863,7 @@ table.data tbody tr:nth-child(even) td {
 .tm-unit { font-family: var(--sans); font-size: 14px; color: var(--text-dim) }
 .tm-chart-box { flex: 1; position: relative; min-height: 110px }
 
-/* ============ COLLAPSE ============ */
+/* ============ 折叠面板 COLLAPSE ============ */
 .collapse {
   border: 1px solid rgba(255,255,255,0.06);
   border-radius: var(--r-md);
@@ -873,7 +894,7 @@ table.data tbody tr:nth-child(even) td {
   font-weight: bold;
 }
 
-/* ============ TAGS — iOS Pill Badges ============ */
+/* ============ 标签 TAGS — iOS 胶囊徽章 ============ */
 .tag {
   display: inline-block;
   padding: 3px 10px;
@@ -897,9 +918,9 @@ table.data tbody tr:nth-child(even) td {
   border: none;
 }
 
-/* ============ TOAST — iOS Notification Style ============ */
+/* ============ Toast 通知 — iOS 通知样式 ============ */
 .toast-wrap {
-  position: fixed; bottom: 24px; right: 24px;
+  position: fixed; bottom: 24px; right: 24px; /* 右下角悬浮 */
   z-index: 1000;
   display: flex; flex-direction: column; gap: 10px;
 }
@@ -926,14 +947,14 @@ table.data tbody tr:nth-child(even) td {
   height: 2px;
   background: var(--ember);
   border-radius: 2px;
-  animation: toastCountdown 2.6s linear forwards;
+  animation: toastCountdown 2.6s linear forwards; /* 倒计时进度条 */
 }
 @keyframes toastCountdown { from{width:calc(100% - 24px)} to{width:0} }
 
-/* ============ PAGE TRANSITION — iOS fade + slide + scale ============ */
+/* ============ 页面切换动画 PAGE TRANSITION — iOS 渐隐+滑动+缩放 ============ */
 .page {
   display: none;
-  content-visibility: auto;
+  content-visibility: auto; /* 性能优化：不在视口时跳过渲染 */
   contain-intrinsic-size: auto 800px;
 }
 .page.active {
@@ -945,21 +966,21 @@ table.data tbody tr:nth-child(even) td {
   to   { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
 }
 
-/* ── Card Stagger Entrance ── */
+/* ── 卡片错峰入场动画 Card Stagger Entrance ── */
 .page.active .card { animation: cardStagger .5s var(--ease-overshoot) both; }
 .page.active .card:nth-child(1) { animation-delay: 0ms; }
 .page.active .card:nth-child(2) { animation-delay: 60ms; }
 .page.active .card:nth-child(3) { animation-delay: 120ms; }
 .page.active .card:nth-child(4) { animation-delay: 180ms; }
 .page.active .card:nth-child(5) { animation-delay: 240ms; }
-.page.active .card:nth-child(6) { animation-delay: 300ms; }
+.page.active .card:nth-child(6) { animation-delay: 300ms; } /* 60ms 阶梯延迟 */
 
 @keyframes cardStagger {
   from { opacity: 0; transform: translateY(16px) scale(0.96); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* ── Metric Pop Entrance ── */
+/* ── 指标卡片弹出动画 Metric Pop Entrance ── */
 .page.active .metric { animation: metricPop .4s var(--ease-spring) both; }
 .page.active .metric:nth-child(1) { animation-delay: 80ms; }
 .page.active .metric:nth-child(2) { animation-delay: 140ms; }
@@ -971,10 +992,10 @@ table.data tbody tr:nth-child(even) td {
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* ============ RECOMMENDED SAMPLE CARDS ============ */
+/* ============ 推荐样本卡片 RECOMMENDED SAMPLE CARDS ============ */
 .rec-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); /* 自适应填充 */
   gap: 14px;
 }
 .rec-card {
@@ -1009,10 +1030,10 @@ table.data tbody tr:nth-child(even) td {
 }
 .rec-comp b { color: var(--text); font-weight: 500; margin-right: 2px }
 
-/* ============ MODEL COMPARE ROWS ============ */
+/* ============ 模型对比行 MODEL COMPARE ROWS ============ */
 .cmp-row {
   display: grid;
-  grid-template-columns: 220px 1fr 1.4fr 1fr 1fr 1fr 100px;
+  grid-template-columns: 220px 1fr 1.4fr 1fr 1fr 1fr 100px; /* 七列定宽栅格 */
   padding: 12px 18px;
   border-bottom: 1px solid rgba(255,255,255,0.04);
   font-family: var(--sans); font-size: 12px;
@@ -1044,7 +1065,7 @@ table.data tbody tr:nth-child(even) td {
   transition: width .6s var(--ease-ios);
 }
 
-/* ============ HERO STAT ============ */
+/* ============ 主视觉数值 HERO STAT ============ */
 .hero-stat {
   font-family: var(--sans); font-weight: 700;
   font-size: 60px;
@@ -1058,13 +1079,13 @@ table.data tbody tr:nth-child(even) td {
   margin-left: 4px; font-weight: 400;
 }
 
-/* ============ FOCUS ACCESSIBILITY ============ */
+/* ============ 焦点无障碍 FOCUS ACCESSIBILITY ============ */
 .btn:focus-visible, .select:focus-visible, .input:focus-visible {
   outline: 2px solid var(--ember);
   outline-offset: 2px;
 }
 
-/* ============ LOADING SKELETON ============ */
+/* ============ 加载骨架屏 LOADING SKELETON ============ */
 @keyframes shimmer {
   0% { background-position: -200% 0 }
   100% { background-position: 200% 0 }
@@ -1075,19 +1096,19 @@ table.data tbody tr:nth-child(even) td {
     rgba(255,255,255,0.08) 50%,
     rgba(255,255,255,0.04) 75%);
   background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
+  animation: shimmer 1.5s infinite; /* 闪烁动画模拟加载中 */
   border-radius: var(--r-sm);
 }
 .skeleton-box { padding: 20px }
 
-/* ============ RESPONSIVE ============ */
-@media (max-width: 1280px) {
+/* ============ 响应式 RESPONSIVE ============ */
+@media (max-width: 1280px) { /* 平板 / 中屏：栅格降级 */
   .metrics { grid-template-columns: repeat(2, 1fr) }
   .grid.g3 { grid-template-columns: repeat(2, 1fr) }
   .grid.g-split { grid-template-columns: 1fr }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 900px) { /* 移动端布局：侧栏自动收起 */
   .app { grid-template-columns: 68px 1fr }
   .sidebar .brand { padding: 16px 10px; text-align: center }
   .sidebar .brand-mark { font-size: 16px }
@@ -1107,7 +1128,7 @@ table.data tbody tr:nth-child(even) td {
   .metric { padding: 14px }
   .metric-val { font-size: 22px }
   .grid.g2, .grid.g3, .grid.g-split { grid-template-columns: 1fr }
-  .cmp-row { grid-template-columns: 120px 1fr 60px; font-size: 11px }
+  .cmp-row { grid-template-columns: 120px 1fr 60px; font-size: 11px } /* 窄屏仅保留 3 列 */
   .cmp-row > div:nth-child(3),
   .cmp-row > div:nth-child(4),
   .cmp-row > div:nth-child(5),
@@ -1117,14 +1138,14 @@ table.data tbody tr:nth-child(even) td {
   .tm-grid { grid-template-columns: 1fr }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 560px) { /* 超小屏：单列布局 */
   .metrics { grid-template-columns: 1fr }
   .page-head { flex-direction: column; align-items: flex-start }
   .page-desc { max-width: 100% }
 }
 
-/* ============ ACCESSIBILITY — Reduced Motion ============ */
-@media (prefers-reduced-motion: reduce) {
+/* ============ 无障碍 — 减少动画 ACCESSIBILITY — Reduced Motion ============ */
+@media (prefers-reduced-motion: reduce) { /* 用户开启"减少动态效果"时降级 */
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
