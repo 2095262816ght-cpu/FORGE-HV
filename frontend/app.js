@@ -1351,6 +1351,44 @@ document.getElementById('reg-email').addEventListener('keydown', (e) => { if (e.
 document.getElementById('goto-register').addEventListener('click', () => switchLoginMode('register'));
 document.getElementById('goto-login').addEventListener('click', () => switchLoginMode('login'));
 
+/* ============ 密码输入框小眼睛切换 ============ */
+/**
+ * 给所有 type="password" 的 input 包装一层容器并附加眼睛按钮
+ * - 点击眼睛：在 password / text 之间切换 type，并更新图标
+ * - 容器 .pwd-wrap 提供相对定位，眼睛按钮绝对定位在右侧
+ * - 幂等：已包装过的 input 不会重复处理（通过 closest 判断）
+ * - 动态生效：用 MutationObserver 监听后续插入的 password input（如弹窗内）
+ */
+function wrapPasswordInputs() {
+  document.querySelectorAll('input[type="password"]').forEach(inp => {
+    if (inp.closest('.pwd-wrap')) return;  // 已包装，跳过
+    // 创建包装容器
+    const wrap = document.createElement('div');
+    wrap.className = 'pwd-wrap';
+    inp.parentNode.insertBefore(wrap, inp);
+    wrap.appendChild(inp);
+    // 创建眼睛按钮
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pwd-toggle';
+    btn.setAttribute('aria-label', '显示/隐藏密码');
+    btn.innerHTML = '◉';  // 初始隐藏密码状态：实心圆点
+    btn.addEventListener('click', () => {
+      const isHidden = inp.type === 'password';
+      inp.type = isHidden ? 'text' : 'password';
+      btn.innerHTML = isHidden ? '○' : '◉';  // 显示密码用空心圆，隐藏用实心
+      // 切换后保持焦点在输入框，便于继续输入
+      inp.focus();
+    });
+    wrap.appendChild(btn);
+  });
+}
+// 初次执行
+wrapPasswordInputs();
+// 监听后续动态插入的 password input（弹窗、AJAX 渲染等场景）
+const _pwdObserver = new MutationObserver(() => wrapPasswordInputs());
+_pwdObserver.observe(document.body, { childList: true, subtree: true });
+
 /* ============ PAGE · 数据管理 ============ */
 let dmState = { page: 1, size: 20, keyword: '', sort: '', dir: 'asc', columns: [] };
 function initDataMgr() {

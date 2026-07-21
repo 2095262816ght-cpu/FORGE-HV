@@ -496,6 +496,42 @@ body {
   border-color: var(--ember);
   box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.15), 0 0 16px rgba(10, 132, 255, 0.06);
 }
+
+/* ── 密码字段容器：包裹 input + 小眼睛切换按钮 ── */
+.pwd-wrap {
+  position: relative;
+}
+.pwd-wrap .input {
+  padding-right: 38px;  /* 右侧留出眼睛按钮位置 */
+}
+.pwd-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-faint);
+  font-size: 14px;
+  line-height: 1;
+  border-radius: 6px;
+  transition: all .15s var(--ease-ios);
+  padding: 0;
+  user-select: none;
+}
+.pwd-toggle:hover {
+  color: var(--ember);
+  background: var(--ember-soft);
+}
+.pwd-toggle:active {
+  transform: translateY(-50%) scale(0.92);
+}
 .select {
   appearance: none;
   cursor: pointer;
