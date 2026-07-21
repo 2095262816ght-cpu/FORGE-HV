@@ -76,14 +76,19 @@ python -c "import torch; print('PyTorch', torch.__version__, 'CUDA', torch.cuda.
 ### 方式 A：PyCharm 运行（推荐）
 
 1. 用 PyCharm 打开项目文件夹
-2. 配置项目解释器：`File → Settings → Project → Python Interpreter` → 齿轮图标 → `Add` → `System Interpreter` → 选择 `E:\Miniconda\python.exe`
+2. 配置项目解释器：`File → Settings → Project → Python Interpreter` → 齿轮图标 → `Add` → `System Interpreter` → 选择 `E:\Miniconda\envs\forge-hv\python.exe`（conda 环境 forge-hv 的解释器，含全部依赖 + CUDA 版 PyTorch）
 3. 打开 `app.py`，右键 → `Run 'app'`
 4. 控制台出现 `Running on http://127.0.0.1:5000` 表示后端启动成功
 5. 在文件树里找到 `frontend/index.html`，右键 → `Open in` → `Browser` → `Chrome`
 
-### 方式 B：命令行运行
+### 方式 B：命令行运行（conda 环境）
 
 ```bash
+# 激活 forge-hv 环境（每次使用都要先激活）
+conda activate forge-hv
+# 或免激活直接用: E:\Miniconda\envs\forge-hv\python.exe app.py
+
+# 切到项目根目录后启动后端
 python app.py
 # 看到 "Running on http://127.0.0.1:5000" 后保持窗口不关
 # 浏览器打开 frontend/index.html
@@ -125,7 +130,7 @@ FORGE-HV/
 ├── DDPG.py               # DDPG 离线脚本
 ├── DDPG-gan.py           # DDPG+GAN 离线脚本
 ├── GAN-main.py           # GAN 离线脚本
-├── 说明.txt              # 详细运行说明
+├── README.md             # 项目说明文档（本文件）
 ├── requirements.txt      # pip 依赖清单
 ├── environment.yml       # conda 环境定义
 ├── install.bat           # 一键安装脚本
