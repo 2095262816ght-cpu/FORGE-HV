@@ -224,6 +224,7 @@ def safe_float(x):
 # 数据源统计
 # ============================================================
 @app.route("/api/data/source_stats")
+@login_required(guest_allowed=True)
 def data_source_stats():
     """统计数据源条数：实测 / GAN / 混合"""
     try:
@@ -253,6 +254,7 @@ def data_source_stats():
 # 健康检查
 # ============================================================
 @app.route("/api/health")
+@login_required(guest_allowed=True)
 def health():
     """健康检查"""
     path = _current_data_path()
@@ -269,6 +271,7 @@ def health():
 # 数据列名
 # ============================================================
 @app.route("/api/data/columns")
+@login_required(guest_allowed=True)
 def data_columns():
     """返回数据表的列结构"""
     try:
@@ -287,6 +290,7 @@ def data_columns():
 # 数据预览
 # ============================================================
 @app.route("/api/data/preview")
+@login_required(guest_allowed=True)
 def data_preview():
     """数据预览：返回前 n 行（默认 10，最大 500）"""
     try:
@@ -310,6 +314,7 @@ def data_preview():
 # 数据统计摘要
 # ============================================================
 @app.route("/api/data/stats")
+@login_required(guest_allowed=True)
 def data_stats():
     """统计摘要：样本数、元素数、HV 的 min/max/mean/std/median"""
     try:
@@ -334,6 +339,7 @@ def data_stats():
 # 数据导入（Excel / CSV）—— 对应论文 2 章数据来源说明
 # ============================================================
 @app.route("/api/data/upload", methods=["POST"])
+@login_required()
 def data_upload():
     """数据导入：接收前端上传的 Excel(.xlsx/.xls) 或 CSV 文件
     存到项目 generated_data/uploaded_data.<ext>，并切换后端数据源到该文件
@@ -390,6 +396,7 @@ def data_upload():
 
 
 @app.route("/api/data/reset", methods=["POST"])
+@login_required()
 def data_reset():
     """重置为默认数据文件（取消使用上传数据）"""
     _UPLOADED_DATA_PATH["path"] = None
@@ -400,6 +407,7 @@ def data_reset():
 # 传统回归模型训练（LR / PR / SVR）
 # ============================================================
 @app.route("/api/train/traditional", methods=["POST"])
+@login_required()
 def train_traditional():
     """传统回归模型训练（论文 5.1 节对比算法之一）
 
@@ -490,6 +498,7 @@ def train_traditional():
 # 多模型横向对比（5.3 / 5.4 节用）
 # ============================================================
 @app.route("/api/train/compare", methods=["POST"])
+@login_required()
 def train_compare():
     """多模型横向对比：在统一数据划分上跑 LR / PR / SVR + K 折交叉验证
 
@@ -574,6 +583,7 @@ def train_compare():
 # 训练结果导出：CSV
 # ============================================================
 @app.route("/api/train/export_csv")
+@login_required(guest_allowed=True)
 def train_export_csv():
     """导出最后一次训练的预测结果为 CSV"""
     import io
@@ -611,6 +621,7 @@ def train_export_csv():
 # 训练结果导出：模型 pkl
 # ============================================================
 @app.route("/api/train/export_model")
+@login_required()
 def train_export_model():
     """导出最后一次训练的模型为 pkl 文件"""
     import io
@@ -646,6 +657,7 @@ def train_export_model():
 # 异常值检测（论文 2 章分位数截断 + 多方法支持）
 # ============================================================
 @app.route("/api/outliers/detect", methods=["POST"])
+@login_required()
 def outliers_detect():
     """异常值检测：支持 quantile_clip / isolation_forest / iqr / zscore 四种方法
 
@@ -711,6 +723,7 @@ def outliers_detect():
 # 元素相关性矩阵（原"特征相关性"，论文 2 章术语修正）
 # ============================================================
 @app.route("/api/correlation/matrix")
+@login_required(guest_allowed=True)
 def correlation_matrix():
     """返回 22 种元素成分的相关性矩阵（pearson / spearman / kendall）"""
     try:
@@ -743,6 +756,7 @@ def _high_corr_pairs(corr, cols, threshold=0.7):
 # 数据库查询（保留页面）
 # ============================================================
 @app.route("/api/database/query", methods=["POST"])
+@login_required(guest_allowed=True)
 def database_query():
     """可视化查询构建器后端
     接收结构化参数：
@@ -820,6 +834,7 @@ def database_query():
 
 
 @app.route("/api/database/schema")
+@login_required(guest_allowed=True)
 def database_schema():
     """返回数据表的列结构"""
     try:
@@ -1066,6 +1081,7 @@ def _run_ddpg_async(task_id, data_source, epochs, batch_size, lr_actor, lr_criti
 
 
 @app.route("/api/ddpg/train", methods=["POST"])
+@login_required()
 def ddpg_train():
     """启动 DDPG 异步训练，立即返回 task_id"""
     if not _HAS_TORCH:
@@ -1106,6 +1122,7 @@ def ddpg_train():
 
 
 @app.route("/api/ddpg/status/<task_id>")
+@login_required(guest_allowed=True)
 def ddpg_status(task_id):
     """查询 DDPG 训练进度"""
     task = _DDPG_TASKS.get(task_id)
@@ -1115,6 +1132,7 @@ def ddpg_status(task_id):
 
 
 @app.route("/api/ddpg/tasks")
+@login_required(guest_allowed=True)
 def ddpg_tasks():
     """列出所有 DDPG 训练任务"""
     tasks = []
@@ -1259,17 +1277,57 @@ def _parse_token() -> dict:
         return None
 
 
-def login_required(admin_only: bool = False):
-    """装饰器：要求登录（可选要求管理员）"""
+def _guest_payload() -> dict:
+    """构造游客虚拟身份（role=guest，user_id=0）"""
+    return {
+        "user_id": 0,
+        "username": "guest",
+        "role": "guest",
+        "exp": datetime.utcnow() + timedelta(hours=JWT_EXP_HOURS),
+    }
+
+
+def _is_guest_enabled() -> bool:
+    """读取系统设置 allow_guest_browse，判断是否开放游客浏览"""
+    try:
+        with _DB_LOCK:
+            conn = _get_db()
+            row = conn.execute("SELECT value FROM settings WHERE key = ?", ("allow_guest_browse",)).fetchone()
+            conn.close()
+        if row:
+            return str(row["value"]).lower() == "true"
+    except Exception:
+        pass
+    return _DEFAULT_SETTINGS["allow_guest_browse"].lower() == "true"
+
+
+def login_required(admin_only: bool = False, guest_allowed: bool = False):
+    """统一鉴权装饰器
+
+    参数：
+    - admin_only=True       仅管理员可访问（user/guest 都返回 403）
+    - guest_allowed=True    游客可访问（仅只读业务接口用）
+    - 两者都 False          需登录用户（admin/user 可访问，guest 返回 403）
+
+    若系统设置 allow_guest_browse=true 且请求未带 token，
+    自动注入游客身份（仅当 guest_allowed=True 时）。
+    """
     from functools import wraps
     def deco(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
             payload = _parse_token()
             if not payload:
-                return jsonify({"error": "未登录或登录已过期"}), 401
-            if admin_only and payload.get("role") != "admin":
+                # 无 token：若开启游客模式且本接口允许游客，注入游客身份
+                if guest_allowed and _is_guest_enabled():
+                    payload = _guest_payload()
+                else:
+                    return jsonify({"error": "未登录或登录已过期"}), 401
+            role = payload.get("role", "user")
+            if admin_only and role != "admin":
                 return jsonify({"error": "需要管理员权限"}), 403
+            if not guest_allowed and role == "guest":
+                return jsonify({"error": "游客无权访问该功能，请登录"}), 403
             g.user = payload
             return fn(*args, **kwargs)
         return wrapper
@@ -1311,6 +1369,32 @@ def auth_login():
             "role": row["role"],
             "display_name": row["display_name"],
             "email": row["email"],
+        }
+    })
+
+
+@app.route("/api/auth/guest", methods=["POST"])
+def auth_guest():
+    """游客登录：返回游客 JWT token
+
+    前提：系统设置 allow_guest_browse=true。
+    游客权限受限：仅可访问 guest_allowed=True 的只读业务接口，
+    不能训练、增删改数据、管理用户、修改系统设置。
+    """
+    if not _is_guest_enabled():
+        return jsonify({"error": "管理员未开放游客浏览，请登录"}), 403
+    if not _HAS_JWT:
+        return jsonify({"error": "PyJWT 未安装，游客模式不可用"}), 500
+    payload = _guest_payload()
+    token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+    return jsonify({
+        "token": token,
+        "user": {
+            "id": 0,
+            "username": "guest",
+            "role": "guest",
+            "display_name": "游客",
+            "email": "",
         }
     })
 
@@ -1477,7 +1561,7 @@ def _record_history(task_type, algorithm, data_source, metrics, params, n_sample
 
 
 @app.route("/api/history")
-@login_required()
+@login_required(guest_allowed=True)
 def history_list():
     """查询历史记录（支持按算法/数据源/时间筛选）"""
     page = max(1, int(request.args.get("page", 1)))
@@ -1525,7 +1609,7 @@ def history_list():
 
 
 @app.route("/api/history/<int:hid>")
-@login_required()
+@login_required(guest_allowed=True)
 def history_detail(hid):
     """历史记录详情"""
     with _DB_LOCK:
@@ -1545,7 +1629,7 @@ def history_detail(hid):
 
 
 @app.route("/api/history/export")
-@login_required()
+@login_required(guest_allowed=True)
 def history_export():
     """导出历史记录为 CSV"""
     with _DB_LOCK:
@@ -1653,7 +1737,7 @@ def _load_df_for_manage():
 
 
 @app.route("/api/data/rows")
-@login_required()
+@login_required(guest_allowed=True)
 def data_rows():
     """数据行查询（支持分页 + 关键词搜索 + 按列排序）"""
     page = max(1, int(request.args.get("page", 1)))
@@ -1806,7 +1890,7 @@ def data_batch_import():
 
 
 @app.route("/api/data/export")
-@login_required()
+@login_required(guest_allowed=True)
 def data_export():
     """导出当前数据源为 Excel/CSV"""
     fmt = request.args.get("format", "xlsx").lower()
@@ -1836,7 +1920,7 @@ def data_export():
 
 
 @app.route("/api/data/analysis")
-@login_required()
+@login_required(guest_allowed=True)
 def data_analysis():
     """数据分析：特征统计 + 目标值分布 + 元素相关性摘要（参考论文 2 章）"""
     try:

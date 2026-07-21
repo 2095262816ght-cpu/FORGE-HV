@@ -77,7 +77,30 @@ function navigate(p) {
   if (p === 'history') initHistory();
   if (p === 'users') initUsers();
   if (p === 'settings') initSettings();
+  applyGuestRestrictions(p);
   if (location.hash !== '#' + p) location.hash = p;
+}
+/**
+ * 游客权限拦截 —— 进入页面后禁用写入类按钮
+ * 游客可读不可写：训练/导入/上传/检测/异常值处理等按钮全部禁用
+ * @param {string} page - 当前页面标识
+ */
+function applyGuestRestrictions(page) {
+  if (!isGuest()) return;
+  // 各页面需要禁用的写入按钮 id 列表
+  const writeBtns = {
+    dashboard: ['upload-btn', 'reset-btn'],
+    outliers: ['ol-run'],
+    ddpg: ['ddpg-run', 'ddpg-save'],
+    cmp53: ['cmp53-run'],
+    cmp54: ['cmp54-run'],
+    'data-mgr': ['dm-add', 'dm-batch'],
+  };
+  const ids = writeBtns[page] || [];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.disabled = true; el.title = '游客无权操作，请登录'; }
+  });
 }
 navItems.forEach(it => it.addEventListener('click', () => navigate(it.dataset.page)));
 /* hash 变化时自动跳转 —— 支持浏览器前进/后退/刷新保留当前页 */
@@ -1080,10 +1103,16 @@ function renderCmpScatter(prefix, scatter, title) {
 /* ============ AUTH · 鉴权模块 ============ */
 let CURRENT_USER = null;
 
-/** 显示登录覆盖层 */
-function showLogin() {
+/** 显示登录覆盖层（同时检查是否开放游客浏览） */
+async function showLogin() {
   document.getElementById('login-overlay').classList.add('show');
   document.getElementById('login-username').focus();
+  // 拉取系统设置，决定是否显示「游客访问」按钮
+  try {
+    const res = await api('/api/settings');
+    const allowGuest = res && res.settings && res.settings.allow_guest_browse === 'true';
+    document.getElementById('login-guest').style.display = allowGuest ? 'block' : 'none';
+  } catch (e) { /* 后端未启动时隐藏游客按钮 */ }
 }
 /** 隐藏登录覆盖层 */
 function hideLogin() {
@@ -1098,6 +1127,14 @@ function logout() {
   showLogin();
   toast('已退出登录');
 }
+/** 当前用户是否为游客 */
+function isGuest() {
+  return CURRENT_USER && CURRENT_USER.role === 'guest';
+}
+/** 当前用户是否为管理员 */
+function isAdmin() {
+  return CURRENT_USER && CURRENT_USER.role === 'admin';
+}
 /** 更新顶栏用户区显示 */
 function updateUserUI() {
   const avatar = document.getElementById('user-avatar');
@@ -1110,8 +1147,11 @@ function updateUserUI() {
     avatar.style.color = '#fff';
     name.textContent = CURRENT_USER.username;
     infoName.textContent = CURRENT_USER.display_name || CURRENT_USER.username;
-    infoRole.textContent = CURRENT_USER.role === 'admin' ? '管理员' : '普通用户';
-    infoRole.style.color = CURRENT_USER.role === 'admin' ? 'var(--ember)' : 'var(--text-dim)';
+    const roleMap = { admin: '管理员', user: '普通用户', guest: '游客' };
+    infoRole.textContent = roleMap[CURRENT_USER.role] || '未知';
+    infoRole.style.color = CURRENT_USER.role === 'admin' ? 'var(--ember)'
+      : CURRENT_USER.role === 'guest' ? 'var(--amber)'
+      : 'var(--text-dim)';
   } else {
     avatar.textContent = 'U';
     avatar.style.background = 'var(--bg-hover)';
@@ -1149,11 +1189,31 @@ async function doLogin() {
   const cur = (location.hash || '').replace('#', '') || 'dashboard';
   navigate(cur);
 }
+/** 游客登录（无需账号密码） */
+async function doGuestLogin() {
+  const btn = document.getElementById('login-guest');
+  const errBox = document.getElementById('login-error');
+  errBox.textContent = '';
+  btn.disabled = true; btn.textContent = '进入中...';
+  const res = await api('/api/auth/guest', { method: 'POST' });
+  btn.disabled = false; btn.textContent = '👤 以游客身份浏览';
+  if (res.error) {
+    errBox.textContent = res.error;
+    return;
+  }
+  localStorage.setItem('forge_token', res.token);
+  localStorage.setItem('forge_user', JSON.stringify(res.user));
+  CURRENT_USER = res.user;
+  updateUserUI();
+  hideLogin();
+  toast('✓ 已以游客身份进入（只读模式）', 'ok');
+  navigate('dashboard');
+}
 /** 检查登录状态 */
 async function checkAuth() {
   const token = localStorage.getItem('forge_token');
   const userJson = localStorage.getItem('forge_user');
-  if (!token) { showLogin(); return; }
+  if (!token) { await showLogin(); return; }
   if (userJson) {
     try { CURRENT_USER = JSON.parse(userJson); } catch (e) { CURRENT_USER = null; }
   }
@@ -1203,10 +1263,20 @@ document.getElementById('pwd-save').addEventListener('click', async () => {
 });
 document.getElementById('login-submit').addEventListener('click', doLogin);
 document.getElementById('login-password').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+document.getElementById('login-guest').addEventListener('click', doGuestLogin);
+document.getElementById('login-username').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('login-password').focus(); });
 
 /* ============ PAGE · 数据管理 ============ */
 let dmState = { page: 1, size: 20, keyword: '', sort: '', dir: 'asc', columns: [] };
-function initDataMgr() { loadDmRows(); }
+function initDataMgr() {
+  // 游客禁用写入按钮（新增/批量导入），查询/导出/分析可用
+  const guest = isGuest();
+  ['dm-add', 'dm-batch'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.disabled = guest; el.title = guest ? '游客无权操作，请登录' : ''; }
+  });
+  loadDmRows();
+}
 async function loadDmRows() {
   const params = new URLSearchParams({
     page: dmState.page, size: dmState.size, keyword: dmState.keyword,
@@ -1527,7 +1597,17 @@ async function openEditUser(uid) {
 }
 
 /* ============ PAGE · 系统设置 ============ */
-function initSettings() { loadSettings(); }
+function initSettings() {
+  // 非管理员禁用保存按钮 + 输入框只读
+  const admin = isAdmin();
+  const saveBtn = document.getElementById('st-save');
+  if (saveBtn) { saveBtn.disabled = !admin; saveBtn.title = admin ? '' : '仅管理员可修改'; }
+  ['st-site_title', 'st-default_data_source', 'st-allow_guest_browse', 'st-max_upload_size_mb', 'st-history_retention_days'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !admin;
+  });
+  loadSettings();
+}
 async function loadSettings() {
   const res = await api('/api/settings');
   if (res.error) return toast(res.error, 'error');
