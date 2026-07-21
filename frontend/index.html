@@ -863,6 +863,20 @@
                   <option value="true">是（开放浏览）</option>
                 </select>
               </div>
+              <div class="field">
+                <label class="field-label">允许用户注册</label>
+                <select class="select" id="st-allow_register">
+                  <option value="true">是（开放注册）</option>
+                  <option value="false">否（仅管理员可建账号）</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field-label">注册用户默认角色</label>
+                <select class="select" id="st-default_register_role">
+                  <option value="user">普通用户（可训练/导入/增删改数据）</option>
+                  <option value="guest">游客（只读，需手动提升）</option>
+                </select>
+              </div>
             </div>
             <div style="margin-top:18px;padding:14px;background:var(--bg-hover);border-radius:var(--r-sm);font-size:12px;color:var(--text-dim);font-family:var(--mono);line-height:1.7">
               <b style="color:var(--text)">默认管理员账号：</b>admin / admin123<br>
@@ -894,18 +908,39 @@
     <div class="login-title">高温合金机器学习实验台</div>
     <div class="login-sub">v3.1 · 论文对齐版 · 请登录后使用</div>
     <div class="login-form">
-      <div class="field">
+      <!-- 登录模式字段 -->
+      <div class="field" id="login-field-username">
         <label class="field-label">用户名</label>
         <input class="input" id="login-username" type="text" placeholder="admin" autocomplete="username">
       </div>
-      <div class="field">
+      <div class="field" id="login-field-password">
         <label class="field-label">密码</label>
         <input class="input" id="login-password" type="password" placeholder="admin123" autocomplete="current-password">
       </div>
+      <!-- 注册模式额外字段（默认隐藏） -->
+      <div class="field" id="reg-field-confirm" style="display:none">
+        <label class="field-label">确认密码</label>
+        <input class="input" id="reg-confirm" type="password" placeholder="再次输入密码" autocomplete="new-password">
+      </div>
+      <div class="field" id="reg-field-display" style="display:none">
+        <label class="field-label">显示名（可选）</label>
+        <input class="input" id="reg-display" type="text" placeholder="如：张三">
+      </div>
+      <div class="field" id="reg-field-email" style="display:none">
+        <label class="field-label">邮箱（可选）</label>
+        <input class="input" id="reg-email" type="email" placeholder="user@example.com">
+      </div>
       <div class="login-error" id="login-error"></div>
       <button class="btn btn-primary login-submit" id="login-submit">登 录 →</button>
+      <button class="btn btn-primary login-register" id="register-submit" style="display:none;width:100%;padding:11px 16px">注 册 并 登 录 →</button>
       <button class="btn btn-ghost login-guest" id="login-guest" style="display:none;width:100%;margin-top:8px;padding:10px 16px">👤 以游客身份浏览</button>
-      <div class="login-hint">默认账号 admin / admin123（管理员）</div>
+      <div class="login-switch" id="login-switch">
+        还没有账号？<a href="javascript:void(0)" id="goto-register">立即注册</a>
+      </div>
+      <div class="login-switch" id="register-switch" style="display:none">
+        已有账号？<a href="javascript:void(0)" id="goto-login">返回登录</a>
+      </div>
+      <div class="login-hint" id="login-hint">默认账号 admin / admin123（管理员）</div>
     </div>
   </div>
 </div>

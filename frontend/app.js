@@ -1103,16 +1103,45 @@ function renderCmpScatter(prefix, scatter, title) {
 /* ============ AUTH · 鉴权模块 ============ */
 let CURRENT_USER = null;
 
-/** 显示登录覆盖层（同时检查是否开放游客浏览） */
+/** 显示登录覆盖层（同时检查是否开放游客浏览 / 注册） */
 async function showLogin() {
   document.getElementById('login-overlay').classList.add('show');
+  // 默认回到登录模式（避免上次停留在注册模式）
+  switchLoginMode('login');
   document.getElementById('login-username').focus();
-  // 拉取系统设置，决定是否显示「游客访问」按钮
+  // 拉取系统设置，决定显示哪些入口
   try {
     const res = await api('/api/settings');
-    const allowGuest = res && res.settings && res.settings.allow_guest_browse === 'true';
+    const s = (res && res.settings) || {};
+    const allowGuest = s.allow_guest_browse === 'true';
+    const allowRegister = s.allow_register !== 'false'; // 默认开启
     document.getElementById('login-guest').style.display = allowGuest ? 'block' : 'none';
-  } catch (e) { /* 后端未启动时隐藏游客按钮 */ }
+    document.getElementById('login-switch').style.display = allowRegister ? 'block' : 'none';
+  } catch (e) { /* 后端未启动时隐藏 */ }
+}
+/** 切换登录/注册模式
+ * @param {string} mode - 'login' | 'register'
+ */
+function switchLoginMode(mode) {
+  const isRegister = mode === 'register';
+  // 注册模式额外字段
+  ['reg-field-confirm', 'reg-field-display', 'reg-field-email'].forEach(id => {
+    document.getElementById(id).style.display = isRegister ? 'block' : 'none';
+  });
+  // 切换主按钮
+  document.getElementById('login-submit').style.display = isRegister ? 'none' : 'block';
+  document.getElementById('register-submit').style.display = isRegister ? 'block' : 'none';
+  // 切换底部链接
+  document.getElementById('login-switch').style.display = isRegister ? 'none' : 'block';
+  document.getElementById('register-switch').style.display = isRegister ? 'block' : 'none';
+  // 切换标题副文案
+  document.getElementById('login-sub').textContent = isRegister
+    ? 'v3.1 · 论文对齐版 · 填写信息注册新账号'
+    : 'v3.1 · 论文对齐版 · 请登录后使用';
+  // 清空错误提示
+  document.getElementById('login-error').textContent = '';
+  // 调整密码框 autocomplete
+  document.getElementById('login-password').autocomplete = isRegister ? 'new-password' : 'current-password';
 }
 /** 隐藏登录覆盖层 */
 function hideLogin() {
@@ -1209,6 +1238,56 @@ async function doGuestLogin() {
   toast('✓ 已以游客身份进入（只读模式）', 'ok');
   navigate('dashboard');
 }
+/** 执行注册（注册成功后自动登录） */
+async function doRegister() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value.trim();
+  const confirm = document.getElementById('reg-confirm').value.trim();
+  const display = document.getElementById('reg-display').value.trim();
+  const email = document.getElementById('reg-email').value.trim();
+  const errBox = document.getElementById('login-error');
+  errBox.textContent = '';
+  // 前端基础校验（与后端规则一致）
+  if (!username || !password) {
+    errBox.textContent = '用户名和密码不能为空';
+    return;
+  }
+  if (username.length < 3 || username.length > 20) {
+    errBox.textContent = '用户名长度需 3-20 个字符';
+    return;
+  }
+  if (!/^[A-Za-z0-9_]+$/.test(username)) {
+    errBox.textContent = '用户名只能含字母、数字、下划线';
+    return;
+  }
+  if (password.length < 6 || password.length > 64) {
+    errBox.textContent = '密码长度需 6-64 个字符';
+    return;
+  }
+  if (password !== confirm) {
+    errBox.textContent = '两次输入的密码不一致';
+    return;
+  }
+  const btn = document.getElementById('register-submit');
+  btn.disabled = true; btn.textContent = '注册中...';
+  const res = await api('/api/auth/register', {
+    method: 'POST',
+    body: { username, password, display_name: display, email: email },
+  });
+  btn.disabled = false; btn.textContent = '注 册 并 登 录 →';
+  if (res.error) {
+    errBox.textContent = res.error;
+    return;
+  }
+  // 注册成功 → 自动登录
+  localStorage.setItem('forge_token', res.token);
+  localStorage.setItem('forge_user', JSON.stringify(res.user));
+  CURRENT_USER = res.user;
+  updateUserUI();
+  hideLogin();
+  toast('✓ 注册成功，欢迎加入，' + (res.user.display_name || res.user.username), 'ok');
+  navigate('dashboard');
+}
 /** 检查登录状态 */
 async function checkAuth() {
   const token = localStorage.getItem('forge_token');
@@ -1265,6 +1344,12 @@ document.getElementById('login-submit').addEventListener('click', doLogin);
 document.getElementById('login-password').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
 document.getElementById('login-guest').addEventListener('click', doGuestLogin);
 document.getElementById('login-username').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('login-password').focus(); });
+// 注册相关事件
+document.getElementById('register-submit').addEventListener('click', doRegister);
+document.getElementById('reg-confirm').addEventListener('keydown', (e) => { if (e.key === 'Enter') doRegister(); });
+document.getElementById('reg-email').addEventListener('keydown', (e) => { if (e.key === 'Enter') doRegister(); });
+document.getElementById('goto-register').addEventListener('click', () => switchLoginMode('register'));
+document.getElementById('goto-login').addEventListener('click', () => switchLoginMode('login'));
 
 /* ============ PAGE · 数据管理 ============ */
 let dmState = { page: 1, size: 20, keyword: '', sort: '', dir: 'asc', columns: [] };
@@ -1602,7 +1687,7 @@ function initSettings() {
   const admin = isAdmin();
   const saveBtn = document.getElementById('st-save');
   if (saveBtn) { saveBtn.disabled = !admin; saveBtn.title = admin ? '' : '仅管理员可修改'; }
-  ['st-site_title', 'st-default_data_source', 'st-allow_guest_browse', 'st-max_upload_size_mb', 'st-history_retention_days'].forEach(id => {
+  ['st-site_title', 'st-default_data_source', 'st-allow_guest_browse', 'st-allow_register', 'st-default_register_role', 'st-max_upload_size_mb', 'st-history_retention_days'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = !admin;
   });
@@ -1612,14 +1697,14 @@ async function loadSettings() {
   const res = await api('/api/settings');
   if (res.error) return toast(res.error, 'error');
   const s = res.settings || {};
-  ['site_title', 'default_data_source', 'allow_guest_browse', 'max_upload_size_mb', 'history_retention_days'].forEach(k => {
+  ['site_title', 'default_data_source', 'allow_guest_browse', 'allow_register', 'default_register_role', 'max_upload_size_mb', 'history_retention_days'].forEach(k => {
     const el = document.getElementById('st-' + k);
     if (el && s[k] !== undefined) el.value = s[k];
   });
 }
 document.getElementById('st-save').addEventListener('click', async () => {
   const settings = {};
-  ['site_title', 'default_data_source', 'allow_guest_browse', 'max_upload_size_mb', 'history_retention_days'].forEach(k => {
+  ['site_title', 'default_data_source', 'allow_guest_browse', 'allow_register', 'default_register_role', 'max_upload_size_mb', 'history_retention_days'].forEach(k => {
     const el = document.getElementById('st-' + k);
     if (el) settings[k] = el.value;
   });

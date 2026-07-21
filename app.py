@@ -1397,6 +1397,106 @@ def auth_guest():
             "display_name": "游客",
             "email": "",
         }
+})
+
+
+def _is_register_enabled() -> bool:
+    """读取系统设置 allow_register，判断是否开放自助注册"""
+    try:
+        with _DB_LOCK:
+            conn = _get_db()
+            row = conn.execute("SELECT value FROM settings WHERE key = ?", ("allow_register",)).fetchone()
+            conn.close()
+        if row:
+            return str(row["value"]).lower() == "true"
+    except Exception:
+        pass
+    return _DEFAULT_SETTINGS["allow_register"].lower() == "true"
+
+
+def _get_default_register_role() -> str:
+    """读取注册用户默认角色（user 或 guest）"""
+    try:
+        with _DB_LOCK:
+            conn = _get_db()
+            row = conn.execute("SELECT value FROM settings WHERE key = ?", ("default_register_role",)).fetchone()
+            conn.close()
+        if row and row["value"] in ("user", "guest"):
+            return row["value"]
+    except Exception:
+        pass
+    return _DEFAULT_SETTINGS["default_register_role"]
+
+
+@app.route("/api/auth/register", methods=["POST"])
+def auth_register():
+    """用户自助注册
+
+    前提：系统设置 allow_register=true（默认开启）。
+    注册后默认角色由 default_register_role 决定（默认 user）。
+    用户名规则：3-20 字符，字母/数字/下划线，唯一不区分大小写。
+    密码规则：6-64 字符。
+    """
+    if not _is_register_enabled():
+        return jsonify({"error": "管理员已关闭注册功能"}), 403
+
+    data = request.get_json(force=True, silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "").strip()
+    display_name = (data.get("display_name") or "").strip()
+    email = (data.get("email") or "").strip()
+
+    # 字段校验
+    if not username or not password:
+        return jsonify({"error": "用户名和密码不能为空"}), 400
+    if len(username) < 3 or len(username) > 20:
+        return jsonify({"error": "用户名长度需 3-20 个字符"}), 400
+    if not all(c.isalnum() or c == "_" for c in username):
+        return jsonify({"error": "用户名只能含字母、数字、下划线"}), 400
+    if len(password) < 6 or len(password) > 64:
+        return jsonify({"error": "密码长度需 6-64 个字符"}), 400
+    # 保留用户名黑名单（避免与系统身份冲突）
+    reserved = {"admin", "root", "guest", "system", "administrator", "superuser"}
+    if username.lower() in reserved:
+        return jsonify({"error": "该用户名为系统保留名"}), 400
+
+    # 先在锁外读取默认角色，避免与 _get_default_register_role 内部的 _DB_LOCK 形成死锁
+    role = _get_default_register_role()
+    with _DB_LOCK:
+        conn = _get_db()
+        # 用户名唯一性检查（不区分大小写）
+        existing = conn.execute("SELECT id FROM users WHERE LOWER(username) = LOWER(?)", (username,)).fetchone()
+        if existing:
+            conn.close()
+            return jsonify({"error": "用户名已存在"}), 409
+        _create_user_internal(
+            c=conn.cursor(),
+            username=username,
+            password=password,
+            role=role,
+            display_name=display_name or username,
+            email=email or None,
+        )
+        conn.commit()
+        # 取回新用户
+        row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        conn.close()
+
+    if not row:
+        return jsonify({"error": "注册失败，请重试"}), 500
+
+    # 注册成功后自动登录，签发 token
+    token = _generate_token(row)
+    return jsonify({
+        "token": token,
+        "user": {
+            "id": row["id"],
+            "username": row["username"],
+            "role": row["role"],
+            "display_name": row["display_name"],
+            "email": row["email"],
+        },
+        "message": "注册成功",
     })
 
 
@@ -1683,6 +1783,8 @@ _DEFAULT_SETTINGS = {
     "site_title": "FORGE 高温合金机器学习实验台",
     "default_data_source": "real",
     "allow_guest_browse": "false",
+    "allow_register": "true",          # 是否允许用户自助注册（注册后默认 user 角色）
+    "default_register_role": "user",   # 注册用户的默认角色（user / guest）
     "max_upload_size_mb": "50",
     "history_retention_days": "365",
 }
