@@ -79,6 +79,15 @@
         <div class="nav-item" data-page="cmp53"><span class="ic">◆</span>5.3 硬度预测对比</div>
         <div class="nav-item" data-page="cmp54"><span class="ic">▦</span>5.4 GAN 数据扩充对比</div>
       </div>
+
+      <!-- 组 4：系统管理 -->
+      <div class="nav-group">
+        <div class="nav-cat">系统管理 <span class="arrow">▼</span></div>
+        <div class="nav-item" data-page="data-mgr"><span class="ic">⊟</span>数据管理</div>
+        <div class="nav-item" data-page="history"><span class="ic">⌚</span>历史记录</div>
+        <div class="nav-item" data-page="users"><span class="ic">♛</span>用户管理</div>
+        <div class="nav-item" data-page="settings"><span class="ic">⚙</span>系统设置</div>
+      </div>
     </nav>
 
     <!-- 侧边栏底部 -->
@@ -100,6 +109,19 @@
       <div class="topbar-r">
       <span class="kbd">⌘K</span>
         <div class="gpu-badge"><span class="gd"></span>CUDA 12.6 · 6GB</div>
+        <div class="user-menu" id="user-menu">
+          <div class="user-avatar" id="user-avatar">U</div>
+          <span class="user-name" id="user-name">未登录</span>
+          <div class="user-dropdown" id="user-dropdown">
+            <div class="user-info">
+              <div class="user-info-name" id="user-info-name">—</div>
+              <div class="user-info-role" id="user-info-role">—</div>
+            </div>
+            <div class="user-dropdown-item" id="user-goto-settings">⚙ 系统设置</div>
+            <div class="user-dropdown-item" id="user-change-pwd">🔑 修改密码</div>
+            <div class="user-dropdown-item danger" id="user-logout">⏻ 退出登录</div>
+          </div>
+        </div>
       </div>
     </header>
 
@@ -626,6 +648,232 @@
       </div>
       <!-- ============ 页面 7 · 5.4 GAN 数据扩充对比 结束 ============ -->
 
+      <!-- ============ 页面 8 · 数据管理（data-mgr） ============ -->
+      <div class="page" id="page-data-mgr">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">系统管理</div>
+            <h1 class="page-title">数据 <em>管理</em></h1>
+          </div>
+          <div class="page-desc">对当前数据源做行级录入、查询、修改、删除、批量导入与导出。支持关键词搜索与按列排序。</div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-head">
+            <div class="card-title"><span class="num">01</span>数据操作</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-primary" id="dm-add">＋ 新增一行</button>
+              <button class="btn btn-ghost" id="dm-batch">↑ 批量导入</button>
+              <input type="file" id="dm-batch-file" accept=".xlsx,.xls,.csv" style="display:none">
+              <button class="btn btn-ghost" id="dm-export-xlsx">↓ 导出 Excel</button>
+              <button class="btn btn-ghost" id="dm-export-csv">↓ 导出 CSV</button>
+              <button class="btn btn-ghost" id="dm-analysis">📊 数据分析</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+              <input class="input" id="dm-search" placeholder="关键词搜索（任意列包含）" style="flex:1;min-width:200px">
+              <select class="select" id="dm-sort" style="width:160px">
+                <option value="">— 不排序 —</option>
+              </select>
+              <select class="select" id="dm-dir" style="width:100px">
+                <option value="asc">升序</option>
+                <option value="desc">降序</option>
+              </select>
+              <button class="btn btn-ghost" id="dm-search-btn">🔍 查询</button>
+            </div>
+            <div class="table-wrap">
+              <table class="data" id="dm-table">
+                <thead><tr><th>加载中...</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;font-family:var(--mono);font-size:11px;color:var(--text-dim)">
+              <span id="dm-info">—</span>
+              <div style="display:flex;gap:6px;align-items:center">
+                <button class="btn btn-ghost" id="dm-prev" style="padding:6px 12px;font-size:12px">‹ 上一页</button>
+                <span id="dm-page">1 / 1</span>
+                <button class="btn btn-ghost" id="dm-next" style="padding:6px 12px;font-size:12px">下一页 ›</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 数据分析结果区 -->
+        <div class="card" id="dm-analysis-card" style="display:none">
+          <div class="card-head">
+            <div class="card-title"><span class="num">02</span>数据分析摘要</div>
+            <button class="btn btn-ghost" id="dm-analysis-close" style="padding:6px 12px;font-size:12px">✕ 关闭</button>
+          </div>
+          <div class="card-body">
+            <div class="grid g-split">
+              <div>
+                <div style="font-family:var(--sans);font-size:12px;font-weight:600;color:var(--text);margin-bottom:10px">目标值（HV）分布</div>
+                <div class="chart-box"><canvas id="dm-hist-chart"></canvas></div>
+              </div>
+              <div>
+                <div style="font-family:var(--sans);font-size:12px;font-weight:600;color:var(--text);margin-bottom:10px">元素相关性 Top 10</div>
+                <div class="chart-box"><canvas id="dm-corr-chart"></canvas></div>
+              </div>
+            </div>
+            <div id="dm-stats-table" style="margin-top:18px"></div>
+          </div>
+        </div>
+      </div>
+      <!-- ============ 页面 8 · 数据管理 结束 ============ -->
+
+      <!-- ============ 页面 9 · 历史记录（history） ============ -->
+      <div class="page" id="page-history">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">系统管理</div>
+            <h1 class="page-title">历史 <em>预测记录</em></h1>
+          </div>
+          <div class="page-desc">所有训练/预测任务自动落库，支持按算法、数据源、时间范围筛选，并可导出 CSV。</div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title"><span class="num">01</span>筛选条件</div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-ghost" id="his-export">↓ 导出 CSV</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+              <select class="select" id="his-algorithm" style="width:200px">
+                <option value="">— 全部算法 —</option>
+                <option value="LinearRegression">LinearRegression</option>
+                <option value="PolynomialRegression">PolynomialRegression</option>
+                <option value="SVR">SVR</option>
+                <option value="DDPG">DDPG</option>
+              </select>
+              <select class="select" id="his-source" style="width:160px">
+                <option value="">— 全部数据源 —</option>
+                <option value="real">real</option>
+                <option value="gan">gan</option>
+                <option value="gan_train_real_test">gan_train_real_test</option>
+              </select>
+              <label style="font-size:12px;color:var(--text-dim)">从</label>
+              <input class="input" type="date" id="his-from" style="width:150px">
+              <label style="font-size:12px;color:var(--text-dim)">到</label>
+              <input class="input" type="date" id="his-to" style="width:150px">
+              <button class="btn btn-primary" id="his-search">🔍 查询</button>
+            </div>
+            <div class="table-wrap">
+              <table class="data" id="his-table">
+                <thead>
+                  <tr>
+                    <th>ID</th><th>时间</th><th>用户</th><th>任务</th><th>算法</th>
+                    <th>数据源</th><th>样本数</th><th>R²</th><th>RMSE</th><th>MAE</th><th>MAPE</th><th>状态</th><th>操作</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;font-family:var(--mono);font-size:11px;color:var(--text-dim)">
+              <span id="his-info">—</span>
+              <div style="display:flex;gap:6px;align-items:center">
+                <button class="btn btn-ghost" id="his-prev" style="padding:6px 12px;font-size:12px">‹ 上一页</button>
+                <span id="his-page">1 / 1</span>
+                <button class="btn btn-ghost" id="his-next" style="padding:6px 12px;font-size:12px">下一页 ›</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- ============ 页面 9 · 历史记录 结束 ============ -->
+
+      <!-- ============ 页面 10 · 用户管理（users） ============ -->
+      <div class="page" id="page-users">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">系统管理 · 仅管理员</div>
+            <h1 class="page-title">用户 <em>管理</em></h1>
+          </div>
+          <div class="page-desc">管理系统用户账号，支持角色分配（admin/user）、重置密码、删除账号。</div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title"><span class="num">01</span>用户列表</div>
+            <div style="display:flex;gap:8px">
+              <input class="input" id="us-kw" placeholder="搜索用户名" style="width:200px;padding:8px 12px">
+              <button class="btn btn-ghost" id="us-search">🔍</button>
+              <button class="btn btn-primary" id="us-add">＋ 新建用户</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="table-wrap">
+              <table class="data" id="us-table">
+                <thead>
+                  <tr>
+                    <th>ID</th><th>用户名</th><th>显示名</th><th>邮箱</th>
+                    <th>角色</th><th>创建时间</th><th>最近登录</th><th>操作</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- ============ 页面 10 · 用户管理 结束 ============ -->
+
+      <!-- ============ 页面 11 · 系统设置（settings） ============ -->
+      <div class="page" id="page-settings">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">系统管理</div>
+            <h1 class="page-title">系统 <em>设置</em></h1>
+          </div>
+          <div class="page-desc">站点标题、默认数据源、上传大小限制、历史保留天数等系统级配置。仅管理员可修改。</div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title"><span class="num">01</span>系统配置</div>
+            <button class="btn btn-primary" id="st-save">💾 保存设置</button>
+          </div>
+          <div class="card-body">
+            <div class="grid g-split">
+              <div class="field">
+                <label class="field-label">站点标题</label>
+                <input class="input" id="st-site_title" type="text">
+              </div>
+              <div class="field">
+                <label class="field-label">默认数据源</label>
+                <select class="select" id="st-default_data_source">
+                  <option value="real">real（实测 149 条）</option>
+                  <option value="gan">gan（GAN 扩充）</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field-label">上传大小限制（MB）</label>
+                <input class="input" id="st-max_upload_size_mb" type="number" min="1" max="500">
+              </div>
+              <div class="field">
+                <label class="field-label">历史保留天数</label>
+                <input class="input" id="st-history_retention_days" type="number" min="1" max="3650">
+              </div>
+              <div class="field">
+                <label class="field-label">允许游客浏览</label>
+                <select class="select" id="st-allow_guest_browse">
+                  <option value="false">否（必须登录）</option>
+                  <option value="true">是（开放浏览）</option>
+                </select>
+              </div>
+            </div>
+            <div style="margin-top:18px;padding:14px;background:var(--bg-hover);border-radius:var(--r-sm);font-size:12px;color:var(--text-dim);font-family:var(--mono);line-height:1.7">
+              <b style="color:var(--text)">默认管理员账号：</b>admin / admin123<br>
+              <b style="color:var(--text)">数据库文件：</b>forge.db（SQLite，位于项目根目录）<br>
+              <b style="color:var(--text)">修改密码：</b>顶栏右上角头像 → 修改密码
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- ============ 页面 11 · 系统设置 结束 ============ -->
+
     </section>
     <!-- ============ 内容容器结束 ============ -->
   </main>
@@ -635,6 +883,100 @@
 
 <!-- 全局 Toast 通知容器 -->
 <div class="toast-wrap" id="toasts"></div>
+
+<!-- ============ 登录覆盖层 ============ -->
+<div class="login-overlay" id="login-overlay">
+  <div class="login-box">
+    <div class="login-brand">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="5" fill="url(#fg2)" opacity=".9"/><path d="M8 12.5L11 15.5L16.5 9" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="fg2" x1="3" y1="3" x2="21" y2="21"><stop stop-color="#0A84FF"/><stop offset="1" stop-color="#5E5CE6"/></linearGradient></defs></svg>
+      <span>FORGE</span>
+    </div>
+    <div class="login-title">高温合金机器学习实验台</div>
+    <div class="login-sub">v3.1 · 论文对齐版 · 请登录后使用</div>
+    <div class="login-form">
+      <div class="field">
+        <label class="field-label">用户名</label>
+        <input class="input" id="login-username" type="text" placeholder="admin" autocomplete="username">
+      </div>
+      <div class="field">
+        <label class="field-label">密码</label>
+        <input class="input" id="login-password" type="password" placeholder="admin123" autocomplete="current-password">
+      </div>
+      <div class="login-error" id="login-error"></div>
+      <button class="btn btn-primary login-submit" id="login-submit">登 录 →</button>
+      <div class="login-hint">默认账号 admin / admin123（管理员）</div>
+    </div>
+  </div>
+</div>
+<!-- ============ 登录覆盖层 结束 ============ -->
+
+<!-- ============ 修改密码 Modal ============ -->
+<div class="modal-overlay" id="pwd-modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-head">
+      <div class="modal-title">🔑 修改密码</div>
+      <button class="modal-close" id="pwd-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label class="field-label">原密码</label>
+        <input class="input" id="pwd-old" type="password">
+      </div>
+      <div class="field">
+        <label class="field-label">新密码（至少 6 位）</label>
+        <input class="input" id="pwd-new" type="password">
+      </div>
+      <div class="field">
+        <label class="field-label">确认新密码</label>
+        <input class="input" id="pwd-confirm" type="password">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="pwd-cancel">取消</button>
+      <button class="btn btn-primary" id="pwd-save">确认修改</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 用户编辑 Modal ============ -->
+<div class="modal-overlay" id="user-modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-head">
+      <div class="modal-title" id="user-modal-title">新建用户</div>
+      <button class="modal-close" id="user-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="um-id">
+      <div class="field">
+        <label class="field-label">用户名 *</label>
+        <input class="input" id="um-username" type="text">
+      </div>
+      <div class="field">
+        <label class="field-label">显示名</label>
+        <input class="input" id="um-display_name" type="text">
+      </div>
+      <div class="field">
+        <label class="field-label">邮箱</label>
+        <input class="input" id="um-email" type="email">
+      </div>
+      <div class="field">
+        <label class="field-label">角色</label>
+        <select class="select" id="um-role">
+          <option value="user">user（普通用户）</option>
+          <option value="admin">admin（管理员）</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label" id="um-pwd-label">密码 *（至少 6 位）</label>
+        <input class="input" id="um-password" type="password">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="user-cancel">取消</button>
+      <button class="btn btn-primary" id="user-save">保存</button>
+    </div>
+  </div>
+</div>
 
 <!-- 主交互脚本 -->
 <script src="app.js"></script>

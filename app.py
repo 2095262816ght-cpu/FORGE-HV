@@ -60,12 +60,17 @@ Flask 后端服务，为 FORGE-HV 前端提供与论文对应的 REST API。
 import os
 import sys
 import time
+import json
+import sqlite3
+import hashlib
+import secrets
 import traceback
 import threading
 import uuid
+from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, g
 from flask_cors import CORS
 
 # 确保能 import 项目模块
@@ -73,6 +78,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import config
 from CT_main import load_and_filter_gan_data, prepare_gan_features, calculate_metrics
+
+# 可选依赖：JWT 鉴权
+try:
+    import jwt
+    _HAS_JWT = True
+except ImportError:
+    _HAS_JWT = False
+    print("[warn] PyJWT 未安装，用户登录功能将不可用。pip install PyJWT")
 
 # 第三方机器学习库（只保留论文涉及的算法依赖）
 import sklearn
@@ -443,6 +456,20 @@ def train_traditional():
             {"x": safe_float(y_test[i]), "y": safe_float(y_test_pred[i])}
             for i in range(len(y_test))
         ]
+        # 自动写入历史预测记录
+        try:
+            _record_history(
+                task_type="train_traditional",
+                algorithm=model_name,
+                data_source=data_source,
+                metrics={"train": train_metrics, "test": test_metrics},
+                params={"test_size": test_size, **params},
+                n_samples=len(y_train) + len(y_test),
+                duration_sec=0,
+                status="done",
+            )
+        except Exception:
+            pass
         return jsonify({
             "model": model_name,
             "params": params,
@@ -1106,13 +1133,782 @@ def ddpg_tasks():
 
 
 # ============================================================
+# 用户系统 + 历史记录 + 数据管理（统一扩展模块）
+# ------------------------------------------------------------
+# - SQLite 持久化：users / history / settings 三张表
+# - JWT 鉴权：登录签发 token，受保护接口通过 @login_required 校验
+# - 角色：admin（管理员）/ user（普通用户）
+# - 历史：训练/预测完成自动落库，支持按时间/算法/用户筛选 + 导出
+# - 数据管理：对当前数据源做行级增删改查 + 批量导入 + 导出
+# ============================================================
+
+DB_PATH = os.path.join(config.BASE_DIR, "forge.db")
+JWT_SECRET = "forge-hv-secret-key-2026"  # 本地演示用，可改环境变量
+JWT_EXP_HOURS = 24
+
+_DB_LOCK = threading.Lock()
+
+
+def _get_db():
+    """获取 SQLite 连接（行级结果可按列名访问）"""
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _init_db():
+    """初始化数据库表"""
+    with _DB_LOCK:
+        conn = _get_db()
+        c = conn.cursor()
+        # 用户表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                salt TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
+                display_name TEXT,
+                email TEXT,
+                created_at TEXT NOT NULL,
+                last_login TEXT
+            )
+        """)
+        # 历史预测记录表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                username TEXT,
+                task_type TEXT,
+                algorithm TEXT,
+                data_source TEXT,
+                metrics TEXT,
+                params TEXT,
+                n_samples INTEGER,
+                duration_sec REAL,
+                status TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )
+        """)
+        # 系统设置表（key-value）
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                updated_at TEXT NOT NULL,
+                updated_by TEXT
+            )
+        """)
+        conn.commit()
+
+        # 首次启动自动创建默认 admin 账号
+        c.execute("SELECT COUNT(*) AS n FROM users")
+        if c.fetchone()["n"] == 0:
+            _create_user_internal(c, "admin", "admin123", "admin", "管理员", "admin@forge.local")
+            print("[init] 已创建默认管理员账号 admin / admin123")
+
+        conn.commit()
+        conn.close()
+
+
+def _hash_password(password: str, salt: str = None) -> tuple:
+    """密码加盐 SHA-256 哈希（本地演示级，生产建议用 bcrypt）"""
+    if salt is None:
+        salt = secrets.token_hex(16)
+    h = hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
+    return h, salt
+
+
+def _create_user_internal(c, username, password, role="user", display_name=None, email=None):
+    """内部工具：在已打开的 cursor 上创建用户"""
+    h, salt = _hash_password(password)
+    c.execute(
+        "INSERT INTO users (username, password_hash, salt, role, display_name, email, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (username, h, salt, role, display_name, email, datetime.now().isoformat())
+    )
+
+
+def _generate_token(user_row) -> str:
+    """签发 JWT token"""
+    if not _HAS_JWT:
+        return "no-jwt-" + secrets.token_hex(16)
+    payload = {
+        "user_id": user_row["id"],
+        "username": user_row["username"],
+        "role": user_row["role"],
+        "exp": datetime.utcnow() + timedelta(hours=JWT_EXP_HOURS),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+
+def _parse_token() -> dict:
+    """从请求头解析 token，失败返回 None"""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None
+    token = auth[7:]
+    if not _HAS_JWT:
+        return None
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except Exception:
+        return None
+
+
+def login_required(admin_only: bool = False):
+    """装饰器：要求登录（可选要求管理员）"""
+    from functools import wraps
+    def deco(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            payload = _parse_token()
+            if not payload:
+                return jsonify({"error": "未登录或登录已过期"}), 401
+            if admin_only and payload.get("role") != "admin":
+                return jsonify({"error": "需要管理员权限"}), 403
+            g.user = payload
+            return fn(*args, **kwargs)
+        return wrapper
+    return deco
+
+
+# ------------------------------------------------------------
+# 用户认证 API
+# ------------------------------------------------------------
+@app.route("/api/auth/login", methods=["POST"])
+def auth_login():
+    """用户登录：返回 JWT token 与用户信息"""
+    data = request.get_json(force=True, silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "").strip()
+    if not username or not password:
+        return jsonify({"error": "用户名和密码不能为空"}), 400
+
+    with _DB_LOCK:
+        conn = _get_db()
+        row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "用户名不存在"}), 404
+        h, _ = _hash_password(password, row["salt"])
+        if h != row["password_hash"]:
+            conn.close()
+            return jsonify({"error": "密码错误"}), 401
+        conn.execute("UPDATE users SET last_login = ? WHERE id = ?", (datetime.now().isoformat(), row["id"]))
+        conn.commit()
+        conn.close()
+
+    token = _generate_token(row)
+    return jsonify({
+        "token": token,
+        "user": {
+            "id": row["id"],
+            "username": row["username"],
+            "role": row["role"],
+            "display_name": row["display_name"],
+            "email": row["email"],
+        }
+    })
+
+
+@app.route("/api/auth/me")
+@login_required()
+def auth_me():
+    """获取当前登录用户信息"""
+    return jsonify({"user": g.user})
+
+
+@app.route("/api/auth/change_password", methods=["POST"])
+@login_required()
+def auth_change_password():
+    """修改自己的密码"""
+    data = request.get_json(force=True, silent=True) or {}
+    old_pwd = data.get("old_password", "")
+    new_pwd = data.get("new_password", "")
+    if not old_pwd or not new_pwd:
+        return jsonify({"error": "原密码和新密码不能为空"}), 400
+    if len(new_pwd) < 6:
+        return jsonify({"error": "新密码至少 6 位"}), 400
+
+    with _DB_LOCK:
+        conn = _get_db()
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (g.user["user_id"],)).fetchone()
+        h, _ = _hash_password(old_pwd, row["salt"])
+        if h != row["password_hash"]:
+            conn.close()
+            return jsonify({"error": "原密码错误"}), 401
+        new_h, new_salt = _hash_password(new_pwd)
+        conn.execute("UPDATE users SET password_hash = ?, salt = ? WHERE id = ?", (new_h, new_salt, row["id"]))
+        conn.commit()
+        conn.close()
+    return jsonify({"status": "ok"})
+
+
+# ------------------------------------------------------------
+# 用户管理 API（仅管理员）
+# ------------------------------------------------------------
+@app.route("/api/users")
+@login_required(admin_only=True)
+def users_list():
+    """用户列表"""
+    page = max(1, int(request.args.get("page", 1)))
+    size = max(1, min(100, int(request.args.get("size", 20))))
+    kw = request.args.get("keyword", "").strip()
+    offset = (page - 1) * size
+    sql = "SELECT id, username, role, display_name, email, created_at, last_login FROM users"
+    args = []
+    if kw:
+        sql += " WHERE username LIKE ? OR display_name LIKE ? OR email LIKE ?"
+        args += [f"%{kw}%", f"%{kw}%", f"%{kw}%"]
+    sql += " ORDER BY id DESC LIMIT ? OFFSET ?"
+    args += [size, offset]
+    with _DB_LOCK:
+        conn = _get_db()
+        rows = [dict(r) for r in conn.execute(sql, args).fetchall()]
+        total = conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
+        conn.close()
+    return jsonify({"items": rows, "total": total, "page": page, "size": size})
+
+
+@app.route("/api/users", methods=["POST"])
+@login_required(admin_only=True)
+def users_create():
+    """创建用户"""
+    data = request.get_json(force=True, silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "").strip()
+    role = (data.get("role") or "user").strip()
+    display_name = (data.get("display_name") or "").strip() or None
+    email = (data.get("email") or "").strip() or None
+    if not username or not password:
+        return jsonify({"error": "用户名和密码不能为空"}), 400
+    if role not in ("admin", "user"):
+        return jsonify({"error": "role 必须是 admin 或 user"}), 400
+    if len(password) < 6:
+        return jsonify({"error": "密码至少 6 位"}), 400
+    try:
+        with _DB_LOCK:
+            conn = _get_db()
+            c = conn.cursor()
+            _create_user_internal(c, username, password, role, display_name, email)
+            conn.commit()
+            conn.close()
+        return jsonify({"status": "ok"})
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "用户名已存在"}), 400
+
+
+@app.route("/api/users/<int:uid>", methods=["PUT"])
+@login_required(admin_only=True)
+def users_update(uid):
+    """修改用户（可改 role / display_name / email / 重置密码）"""
+    data = request.get_json(force=True, silent=True) or {}
+    with _DB_LOCK:
+        conn = _get_db()
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "用户不存在"}), 404
+        role = data.get("role") or row["role"]
+        display_name = data.get("display_name", row["display_name"])
+        email = data.get("email", row["email"])
+        if role not in ("admin", "user"):
+            conn.close()
+            return jsonify({"error": "role 必须是 admin 或 user"}), 400
+        conn.execute(
+            "UPDATE users SET role = ?, display_name = ?, email = ? WHERE id = ?",
+            (role, display_name, email, uid)
+        )
+        # 重置密码（可选）
+        new_pwd = data.get("password")
+        if new_pwd:
+            if len(new_pwd) < 6:
+                conn.close()
+                return jsonify({"error": "密码至少 6 位"}), 400
+            h, salt = _hash_password(new_pwd)
+            conn.execute("UPDATE users SET password_hash = ?, salt = ? WHERE id = ?", (h, salt, uid))
+        conn.commit()
+        conn.close()
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/users/<int:uid>", methods=["DELETE"])
+@login_required(admin_only=True)
+def users_delete(uid):
+    """删除用户（不能删除自己）"""
+    if uid == g.user["user_id"]:
+        return jsonify({"error": "不能删除当前登录用户"}), 400
+    with _DB_LOCK:
+        conn = _get_db()
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "用户不存在"}), 404
+        conn.execute("DELETE FROM users WHERE id = ?", (uid,))
+        conn.commit()
+        conn.close()
+    return jsonify({"status": "ok"})
+
+
+# ------------------------------------------------------------
+# 历史预测记录 API
+# ------------------------------------------------------------
+def _record_history(task_type, algorithm, data_source, metrics, params, n_samples, duration_sec, status="done"):
+    """记录一条历史（无登录时 user_id = NULL）"""
+    payload = _parse_token()
+    user_id = payload.get("user_id") if payload else None
+    username = payload.get("username") if payload else None
+    with _DB_LOCK:
+        conn = _get_db()
+        conn.execute(
+            "INSERT INTO history (user_id, username, task_type, algorithm, data_source, metrics, params, "
+            "n_samples, duration_sec, status, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (user_id, username, task_type, algorithm, data_source,
+             json.dumps(metrics, ensure_ascii=False) if metrics else None,
+             json.dumps(params, ensure_ascii=False) if params else None,
+             n_samples, duration_sec, status, datetime.now().isoformat())
+        )
+        conn.commit()
+        conn.close()
+
+
+@app.route("/api/history")
+@login_required()
+def history_list():
+    """查询历史记录（支持按算法/数据源/时间筛选）"""
+    page = max(1, int(request.args.get("page", 1)))
+    size = max(1, min(100, int(request.args.get("size", 20))))
+    offset = (page - 1) * size
+    algorithm = request.args.get("algorithm", "").strip()
+    data_source = request.args.get("data_source", "").strip()
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+
+    sql = "SELECT * FROM history WHERE 1=1"
+    args = []
+    if algorithm:
+        sql += " AND algorithm = ?"; args.append(algorithm)
+    if data_source:
+        sql += " AND data_source = ?"; args.append(data_source)
+    if date_from:
+        sql += " AND created_at >= ?"; args.append(date_from)
+    if date_to:
+        sql += " AND created_at <= ?"; args.append(date_to + " 23:59:59")
+    sql += " ORDER BY id DESC LIMIT ? OFFSET ?"
+    args += [size, offset]
+
+    with _DB_LOCK:
+        conn = _get_db()
+        rows = [dict(r) for r in conn.execute(sql, args).fetchall()]
+        # 统计总数
+        cnt_sql = "SELECT COUNT(*) AS n FROM history WHERE 1=1"
+        cnt_args = []
+        if algorithm: cnt_sql += " AND algorithm = ?"; cnt_args.append(algorithm)
+        if data_source: cnt_sql += " AND data_source = ?"; cnt_args.append(data_source)
+        if date_from: cnt_sql += " AND created_at >= ?"; cnt_args.append(date_from)
+        if date_to: cnt_sql += " AND created_at <= ?"; cnt_args.append(date_to + " 23:59:59")
+        total = conn.execute(cnt_sql, cnt_args).fetchone()["n"]
+        conn.close()
+
+    for r in rows:
+        if r.get("metrics"):
+            try: r["metrics"] = json.loads(r["metrics"])
+            except Exception: pass
+        if r.get("params"):
+            try: r["params"] = json.loads(r["params"])
+            except Exception: pass
+    return jsonify({"items": rows, "total": total, "page": page, "size": size})
+
+
+@app.route("/api/history/<int:hid>")
+@login_required()
+def history_detail(hid):
+    """历史记录详情"""
+    with _DB_LOCK:
+        conn = _get_db()
+        row = conn.execute("SELECT * FROM history WHERE id = ?", (hid,)).fetchone()
+        conn.close()
+    if not row:
+        return jsonify({"error": "记录不存在"}), 404
+    r = dict(row)
+    if r.get("metrics"):
+        try: r["metrics"] = json.loads(r["metrics"])
+        except Exception: pass
+    if r.get("params"):
+        try: r["params"] = json.loads(r["params"])
+        except Exception: pass
+    return jsonify(r)
+
+
+@app.route("/api/history/export")
+@login_required()
+def history_export():
+    """导出历史记录为 CSV"""
+    with _DB_LOCK:
+        conn = _get_db()
+        rows = [dict(r) for r in conn.execute(
+            "SELECT id, username, task_type, algorithm, data_source, metrics, params, "
+            "n_samples, duration_sec, status, created_at FROM history ORDER BY id DESC"
+        ).fetchall()]
+        conn.close()
+    import io, csv
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["ID", "用户", "任务类型", "算法", "数据源", "指标", "参数", "样本数", "耗时(s)", "状态", "时间"])
+    for r in rows:
+        writer.writerow([
+            r["id"], r.get("username") or "", r.get("task_type") or "",
+            r.get("algorithm") or "", r.get("data_source") or "",
+            r.get("metrics") or "", r.get("params") or "",
+            r.get("n_samples") or "", r.get("duration_sec") or "",
+            r.get("status") or "", r.get("created_at") or ""
+        ])
+    from flask import Response
+    return Response(
+        "\ufeff" + buf.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment;filename=history.csv"}
+    )
+
+
+@app.route("/api/history/<int:hid>", methods=["DELETE"])
+@login_required(admin_only=True)
+def history_delete(hid):
+    """删除历史记录（仅管理员）"""
+    with _DB_LOCK:
+        conn = _get_db()
+        row = conn.execute("SELECT * FROM history WHERE id = ?", (hid,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "记录不存在"}), 404
+        conn.execute("DELETE FROM history WHERE id = ?", (hid,))
+        conn.commit()
+        conn.close()
+    return jsonify({"status": "ok"})
+
+
+# ------------------------------------------------------------
+# 系统设置 API（key-value）
+# ------------------------------------------------------------
+_DEFAULT_SETTINGS = {
+    "site_title": "FORGE 高温合金机器学习实验台",
+    "default_data_source": "real",
+    "allow_guest_browse": "false",
+    "max_upload_size_mb": "50",
+    "history_retention_days": "365",
+}
+
+
+@app.route("/api/settings")
+def settings_get():
+    """获取系统设置（公开接口，登录页要用）"""
+    with _DB_LOCK:
+        conn = _get_db()
+        rows = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM settings").fetchall()}
+        conn.close()
+    merged = dict(_DEFAULT_SETTINGS)
+    merged.update(rows)
+    return jsonify({"settings": merged})
+
+
+@app.route("/api/settings", methods=["PUT"])
+@login_required(admin_only=True)
+def settings_update():
+    """更新系统设置（仅管理员）"""
+    data = request.get_json(force=True, silent=True) or {}
+    settings = data.get("settings", {})
+    if not isinstance(settings, dict):
+        return jsonify({"error": "settings 必须是对象"}), 400
+    now = datetime.now().isoformat()
+    user = g.user.get("username", "")
+    with _DB_LOCK:
+        conn = _get_db()
+        for k, v in settings.items():
+            conn.execute(
+                "INSERT INTO settings (key, value, updated_at, updated_by) VALUES (?,?,?,?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+                (k, str(v), now, user)
+            )
+        conn.commit()
+        conn.close()
+    return jsonify({"status": "ok"})
+
+
+# ------------------------------------------------------------
+# 数据管理 API（行级增删改查 + 导出）
+# ------------------------------------------------------------
+def _load_df_for_manage():
+    """加载数据为 DataFrame，附带行号"""
+    path = _current_data_path()
+    if path.lower().endswith(".csv"):
+        df = pd.read_csv(path)
+    else:
+        df = pd.read_excel(path)
+    df = df.reset_index().rename(columns={"index": "_row_id"})
+    return df
+
+
+@app.route("/api/data/rows")
+@login_required()
+def data_rows():
+    """数据行查询（支持分页 + 关键词搜索 + 按列排序）"""
+    page = max(1, int(request.args.get("page", 1)))
+    size = max(1, min(200, int(request.args.get("size", 20))))
+    offset = (page - 1) * size
+    keyword = request.args.get("keyword", "").strip()
+    sort_col = request.args.get("sort", "").strip()
+    sort_dir = request.args.get("dir", "asc").lower()
+    try:
+        df = _load_df_for_manage()
+    except Exception as e:
+        return jsonify({"error": f"加载数据失败：{e}"}), 500
+
+    # 关键词搜索（任意列包含）
+    if keyword:
+        mask = pd.Series([False] * len(df))
+        for col in df.columns:
+            if col == "_row_id": continue
+            mask = mask | df[col].astype(str).str.contains(keyword, case=False, na=False, regex=False)
+        df = df[mask]
+
+    total = len(df)
+    # 排序
+    if sort_col and sort_col in df.columns:
+        df = df.sort_values(by=sort_col, ascending=(sort_dir != "desc"))
+    df = df.iloc[offset: offset + size]
+
+    # 转 list of dict（NaN 转 None）
+    rows = df.where(pd.notnull(df), None).to_dict(orient="records")
+    return jsonify({
+        "items": rows,
+        "total": total,
+        "page": page,
+        "size": size,
+        "columns": list(df.columns),
+    })
+
+
+@app.route("/api/data/rows/<int:row_id>", methods=["PUT"])
+@login_required()
+def data_row_update(row_id):
+    """修改一行（按 _row_id 定位）"""
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        df = _load_df_for_manage()
+        if row_id not in df["_row_id"].values:
+            return jsonify({"error": "行号不存在"}), 404
+        idx = df.index[df["_row_id"] == row_id][0]
+        for col, val in data.items():
+            if col in df.columns and col != "_row_id":
+                df.at[idx, col] = val
+        df = df.drop(columns=["_row_id"])
+        path = _current_data_path()
+        if path.lower().endswith(".csv"):
+            df.to_csv(path, index=False)
+        else:
+            df.to_excel(path, index=False)
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/data/rows/<int:row_id>", methods=["DELETE"])
+@login_required()
+def data_row_delete(row_id):
+    """删除一行"""
+    try:
+        df = _load_df_for_manage()
+        if row_id not in df["_row_id"].values:
+            return jsonify({"error": "行号不存在"}), 404
+        idx = df.index[df["_row_id"] == row_id][0]
+        df = df.drop(index=idx).drop(columns=["_row_id"])
+        path = _current_data_path()
+        if path.lower().endswith(".csv"):
+            df.to_csv(path, index=False)
+        else:
+            df.to_excel(path, index=False)
+        return jsonify({"status": "ok", "remaining": len(df)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/data/rows", methods=["POST"])
+@login_required()
+def data_row_create():
+    """新增一行"""
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        df = _load_df_for_manage().drop(columns=["_row_id"])
+        new_row = {col: data.get(col) for col in df.columns}
+        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+        path = _current_data_path()
+        if path.lower().endswith(".csv"):
+            df.to_csv(path, index=False)
+        else:
+            df.to_excel(path, index=False)
+        return jsonify({"status": "ok", "n_rows": len(df)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/data/batch_import", methods=["POST"])
+@login_required()
+def data_batch_import():
+    """批量导入：接收 Excel/CSV 文件，追加到当前数据源
+    复用 /api/data/upload 的文件接收逻辑，但改为追加而非覆盖
+    """
+    try:
+        if "file" not in request.files:
+            return jsonify({"error": "未收到文件"}), 400
+        f = request.files["file"]
+        ext = os.path.splitext(f.filename)[1].lower()
+        if ext not in (".xlsx", ".xls", ".csv"):
+            return jsonify({"error": "仅支持 .xlsx / .xls / .csv"}), 400
+
+        tmp_path = os.path.join(config.BASE_DIR, "generated_data", f"batch_tmp{ext}")
+        os.makedirs(os.path.dirname(tmp_path), exist_ok=True)
+        f.save(tmp_path)
+        try:
+            new_df = pd.read_csv(tmp_path) if ext == ".csv" else pd.read_excel(tmp_path)
+        except Exception as e:
+            os.remove(tmp_path)
+            return jsonify({"error": f"文件解析失败：{e}"}), 400
+
+        # 读取现有数据
+        path = _current_data_path()
+        old_df = pd.read_csv(path) if path.lower().endswith(".csv") else pd.read_excel(path)
+        # 列对齐：只取共有列，缺失列补 NaN
+        common_cols = [c for c in old_df.columns if c in new_df.columns]
+        if not common_cols:
+            os.remove(tmp_path)
+            return jsonify({"error": "导入文件的列与现有数据完全不一致"}), 400
+        appended = pd.concat([old_df, new_df[common_cols]], ignore_index=True)
+        if path.lower().endswith(".csv"):
+            appended.to_csv(path, index=False)
+        else:
+            appended.to_excel(path, index=False)
+        os.remove(tmp_path)
+        _record_history("batch_import", "data_import", path, None, {"filename": f.filename, "appended": len(new_df)}, len(appended), 0, "done")
+        return jsonify({
+            "status": "ok",
+            "filename": f.filename,
+            "appended_rows": int(len(new_df)),
+            "total_rows": int(len(appended)),
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/data/export")
+@login_required()
+def data_export():
+    """导出当前数据源为 Excel/CSV"""
+    fmt = request.args.get("format", "xlsx").lower()
+    try:
+        path = _current_data_path()
+        df = pd.read_csv(path) if path.lower().endswith(".csv") else pd.read_excel(path)
+        if fmt == "csv":
+            import io
+            buf = io.StringIO()
+            df.to_csv(buf, index=False)
+            from flask import Response
+            return Response(
+                "\ufeff" + buf.getvalue(),
+                mimetype="text/csv",
+                headers={"Content-Disposition": "attachment;filename=data_export.csv"}
+            )
+        else:
+            import io
+            buf = io.BytesIO()
+            df.to_excel(buf, index=False)
+            buf.seek(0)
+            from flask import send_file
+            return send_file(buf, as_attachment=True, download_name="data_export.xlsx",
+                             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/data/analysis")
+@login_required()
+def data_analysis():
+    """数据分析：特征统计 + 目标值分布 + 元素相关性摘要（参考论文 2 章）"""
+    try:
+        df = _load_df_for_manage().drop(columns=["_row_id"])
+        # 数值列统计
+        numeric_cols = [c for c in df.columns if df[c].dtype != object and c != "Image_Name"]
+        stats = {}
+        for col in numeric_cols:
+            s = df[col].dropna()
+            if len(s) == 0: continue
+            stats[col] = {
+                "count": int(len(s)),
+                "min": safe_float(s.min()),
+                "max": safe_float(s.max()),
+                "mean": safe_float(s.mean()),
+                "std": safe_float(s.std()),
+                "median": safe_float(s.median()),
+                "q1": safe_float(s.quantile(0.25)),
+                "q3": safe_float(s.quantile(0.75)),
+            }
+        # 目标列分布
+        target_stats = {}
+        if TARGET_COL in df.columns:
+            y = df[TARGET_COL].dropna()
+            target_stats = {
+                "count": int(len(y)),
+                "min": safe_float(y.min()),
+                "max": safe_float(y.max()),
+                "mean": safe_float(y.mean()),
+                "std": safe_float(y.std()),
+                "hist_bins": [safe_float(x) for x in np.histogram(y, bins=15)[1].tolist()],
+                "hist_counts": [int(x) for x in np.histogram(y, bins=15)[0].tolist()],
+            }
+        # 元素相关性摘要（与目标列的相关系数 Top 10）
+        correlation_top = []
+        if TARGET_COL in df.columns:
+            elem_cols = [c for c in config.composition_columns if c in df.columns]
+            if elem_cols:
+                corr = df[elem_cols + [TARGET_COL]].corr()[TARGET_COL].drop(TARGET_COL).fillna(0)
+                corr = corr.abs().sort_values(ascending=False).head(10)
+                correlation_top = [{"element": k, "abs_corr": safe_float(v)} for k, v in corr.items()]
+        return jsonify({
+            "feature_stats": stats,
+            "target_stats": target_stats,
+            "correlation_top": correlation_top,
+            "n_samples": len(df),
+            "n_features": len(numeric_cols),
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+# ------------------------------------------------------------
+# 在训练接口里埋点：自动写历史
+# ------------------------------------------------------------
+_original_train_traditional = None
+
+
+# ============================================================
 # 入口
 # ============================================================
+# 初始化数据库（首次启动自动建表 + 创建默认 admin）
+_init_db()
+
 if __name__ == "__main__":
     print("=" * 50)
     print("FORGE 后端服务启动中（精简版 · 论文对齐）...")
     print(f"数据文件: {_current_data_path()}")
     print(f"文件存在: {os.path.exists(_current_data_path())}")
     print(f"PyTorch: {'可用' if _HAS_TORCH else '未安装'}")
+    print(f"JWT 鉴权: {'可用' if _HAS_JWT else '未安装'}")
+    print(f"数据库: {DB_PATH}")
     print("=" * 50)
     app.run(host="127.0.0.1", port=5000, debug=True)

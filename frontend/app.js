@@ -30,16 +30,18 @@
  */
 
 /* ============ NAV ============ */
-/* 面包屑分类与页面名映射（7 个页面，按论文章节分组） */
+/* 面包屑分类与页面名映射（11 个页面：7 论文页 + 4 系统管理页） */
 const crumbCat = {
   dashboard: '数据准备', outliers: '数据准备', correlation: '数据准备', database: '数据准备',
   ddpg: 'DDPG 模型',
   cmp53: '实验对比', cmp54: '实验对比',
+  'data-mgr': '系统管理', history: '系统管理', users: '系统管理', settings: '系统管理',
 };
 const pageNames = {
   dashboard: '数据可视化', outliers: '异常值检测', correlation: '元素相关性', database: '数据库管理',
   ddpg: 'DDPG 训练',
   cmp53: '5.3 硬度预测对比', cmp54: '5.4 GAN 数据扩充对比',
+  'data-mgr': '数据管理', history: '历史记录', users: '用户管理', settings: '系统设置',
 };
 
 /* 分类标题点击折叠 */
@@ -51,7 +53,7 @@ const navItems = document.querySelectorAll('.nav-item');
 /**
  * 路由跳转 —— 统一入口，同步 location.hash
  * 切换激活的导航项与页面容器，更新面包屑，并触发对应页面的 init 函数
- * @param {string} p - 页面标识（dashboard/outliers/correlation/database/ddpg/cmp53/cmp54）
+ * @param {string} p - 页面标识
  */
 function navigate(p) {
   const target = [...navItems].find(n => n.dataset.page === p);
@@ -71,6 +73,10 @@ function navigate(p) {
   if (p === 'ddpg') initDDPG();
   if (p === 'cmp53') initCmp53();
   if (p === 'cmp54') initCmp54();
+  if (p === 'data-mgr') initDataMgr();
+  if (p === 'history') initHistory();
+  if (p === 'users') initUsers();
+  if (p === 'settings') initSettings();
   if (location.hash !== '#' + p) location.hash = p;
 }
 navItems.forEach(it => it.addEventListener('click', () => navigate(it.dataset.page)));
@@ -178,9 +184,27 @@ async function api(path, opts = {}) {
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), API_TIMEOUT);
-    const r = await fetch(API_BASE + path, { ...opts, signal: ctrl.signal });
+    const headers = { ...(opts.headers || {}) };
+    // 自动附加 JWT token（登录接口本身不需要）
+    const token = localStorage.getItem('forge_token');
+    if (token && !path.startsWith('/api/auth/login')) {
+      headers['Authorization'] = 'Bearer ' + token;
+    }
+    // JSON 请求体自动设置 Content-Type
+    if (opts.body && typeof opts.body === 'object' && !(opts.body instanceof FormData)) {
+      headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(opts.body);
+    }
+    const r = await fetch(API_BASE + path, { ...opts, headers, signal: ctrl.signal });
     clearTimeout(timer);
     API_ONLINE = true;
+    // 401 / 403 跳登录
+    if (r.status === 401 || r.status === 403) {
+      const data = await r.json().catch(() => ({}));
+      // 触发未登录事件，由 auth 模块处理跳转
+      window.dispatchEvent(new CustomEvent('auth:unauthorized', { detail: data }));
+      return data || { error: '未登录或权限不足' };
+    }
     return await r.json();
   } catch (e) {
     API_ONLINE = false;
@@ -1053,12 +1077,485 @@ function renderCmpScatter(prefix, scatter, title) {
   });
 })();
 
-/* ============ INIT ============ */
-/* 启动时根据 hash 恢复页面 —— 刷新后仍停留在原页 */
-const initialPage = (location.hash || '').replace('#', '');
-if (initialPage && document.getElementById('page-' + initialPage)) {
-  navigate(initialPage);
-} else {
-  initDashboard();
+/* ============ AUTH · 鉴权模块 ============ */
+let CURRENT_USER = null;
+
+/** 显示登录覆盖层 */
+function showLogin() {
+  document.getElementById('login-overlay').classList.add('show');
+  document.getElementById('login-username').focus();
 }
-toast('✓ FORGE 系统就绪 · 论文对齐版（7 页面）');
+/** 隐藏登录覆盖层 */
+function hideLogin() {
+  document.getElementById('login-overlay').classList.remove('show');
+}
+/** 退出登录 */
+function logout() {
+  localStorage.removeItem('forge_token');
+  localStorage.removeItem('forge_user');
+  CURRENT_USER = null;
+  updateUserUI();
+  showLogin();
+  toast('已退出登录');
+}
+/** 更新顶栏用户区显示 */
+function updateUserUI() {
+  const avatar = document.getElementById('user-avatar');
+  const name = document.getElementById('user-name');
+  const infoName = document.getElementById('user-info-name');
+  const infoRole = document.getElementById('user-info-role');
+  if (CURRENT_USER) {
+    avatar.textContent = (CURRENT_USER.username || 'U').charAt(0).toUpperCase();
+    avatar.style.background = 'linear-gradient(135deg, var(--ember), var(--copper))';
+    avatar.style.color = '#fff';
+    name.textContent = CURRENT_USER.username;
+    infoName.textContent = CURRENT_USER.display_name || CURRENT_USER.username;
+    infoRole.textContent = CURRENT_USER.role === 'admin' ? '管理员' : '普通用户';
+    infoRole.style.color = CURRENT_USER.role === 'admin' ? 'var(--ember)' : 'var(--text-dim)';
+  } else {
+    avatar.textContent = 'U';
+    avatar.style.background = 'var(--bg-hover)';
+    avatar.style.color = 'var(--text-faint)';
+    name.textContent = '未登录';
+    infoName.textContent = '—';
+    infoRole.textContent = '—';
+  }
+}
+/** 执行登录 */
+async function doLogin() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value.trim();
+  const errBox = document.getElementById('login-error');
+  errBox.textContent = '';
+  if (!username || !password) {
+    errBox.textContent = '请输入用户名和密码';
+    return;
+  }
+  const btn = document.getElementById('login-submit');
+  btn.disabled = true; btn.textContent = '登录中...';
+  const res = await api('/api/auth/login', { method: 'POST', body: { username, password } });
+  btn.disabled = false; btn.textContent = '登 录 →';
+  if (res.error) {
+    errBox.textContent = res.error;
+    return;
+  }
+  localStorage.setItem('forge_token', res.token);
+  localStorage.setItem('forge_user', JSON.stringify(res.user));
+  CURRENT_USER = res.user;
+  updateUserUI();
+  hideLogin();
+  toast('✓ 欢迎回来，' + (res.user.display_name || res.user.username), 'ok');
+  // 触发当前页 init
+  const cur = (location.hash || '').replace('#', '') || 'dashboard';
+  navigate(cur);
+}
+/** 检查登录状态 */
+async function checkAuth() {
+  const token = localStorage.getItem('forge_token');
+  const userJson = localStorage.getItem('forge_user');
+  if (!token) { showLogin(); return; }
+  if (userJson) {
+    try { CURRENT_USER = JSON.parse(userJson); } catch (e) { CURRENT_USER = null; }
+  }
+  // 调 /me 验证 token 是否还有效
+  const res = await api('/api/auth/me');
+  if (res.error) {
+    logout();
+    return;
+  }
+  CURRENT_USER = res.user;
+  updateUserUI();
+  hideLogin();
+}
+/** 监听 401/403 自动跳登录 */
+window.addEventListener('auth:unauthorized', () => {
+  toast('⚠ 登录已过期，请重新登录', 'warn');
+  logout();
+});
+
+/* ============ 顶栏用户菜单交互 ============ */
+document.getElementById('user-menu').addEventListener('click', (e) => {
+  e.stopPropagation();
+  document.getElementById('user-dropdown').classList.toggle('show');
+});
+document.addEventListener('click', () => {
+  document.getElementById('user-dropdown').classList.remove('show');
+});
+document.getElementById('user-logout').addEventListener('click', logout);
+document.getElementById('user-goto-settings').addEventListener('click', () => navigate('settings'));
+document.getElementById('user-change-pwd').addEventListener('click', () => {
+  document.getElementById('pwd-modal').style.display = 'flex';
+});
+document.getElementById('pwd-close').addEventListener('click', () => document.getElementById('pwd-modal').style.display = 'none');
+document.getElementById('pwd-cancel').addEventListener('click', () => document.getElementById('pwd-modal').style.display = 'none');
+document.getElementById('pwd-save').addEventListener('click', async () => {
+  const oldPwd = document.getElementById('pwd-old').value;
+  const newPwd = document.getElementById('pwd-new').value;
+  const confirm = document.getElementById('pwd-confirm').value;
+  if (!oldPwd || !newPwd) return toast('原密码和新密码不能为空', 'warn');
+  if (newPwd !== confirm) return toast('两次新密码不一致', 'warn');
+  if (newPwd.length < 6) return toast('新密码至少 6 位', 'warn');
+  const res = await api('/api/auth/change_password', { method: 'POST', body: { old_password: oldPwd, new_password: newPwd } });
+  if (res.error) return toast(res.error, 'error');
+  toast('✓ 密码修改成功', 'ok');
+  document.getElementById('pwd-modal').style.display = 'none';
+  ['pwd-old', 'pwd-new', 'pwd-confirm'].forEach(id => document.getElementById(id).value = '');
+});
+document.getElementById('login-submit').addEventListener('click', doLogin);
+document.getElementById('login-password').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+
+/* ============ PAGE · 数据管理 ============ */
+let dmState = { page: 1, size: 20, keyword: '', sort: '', dir: 'asc', columns: [] };
+function initDataMgr() { loadDmRows(); }
+async function loadDmRows() {
+  const params = new URLSearchParams({
+    page: dmState.page, size: dmState.size, keyword: dmState.keyword,
+    sort: dmState.sort, dir: dmState.dir,
+  });
+  const res = await api('/api/data/rows?' + params.toString());
+  if (res.error) {
+    document.getElementById('dm-table').querySelector('tbody').innerHTML =
+      '<tr><td colspan="20" style="text-align:center;color:var(--danger);padding:20px">' + res.error + '</td></tr>';
+    return;
+  }
+  dmState.columns = res.columns || [];
+  // 更新排序列下拉
+  const sortSel = document.getElementById('dm-sort');
+  if (sortSel.children.length <= 1) {
+    dmState.columns.forEach(c => {
+      if (c === '_row_id') return;
+      const opt = document.createElement('option');
+      opt.value = c; opt.textContent = c;
+      sortSel.appendChild(opt);
+    });
+  }
+  // 渲染表头
+  const thead = document.getElementById('dm-table').querySelector('thead');
+  thead.innerHTML = '<tr>' + ['操作', ...res.columns.map(c => '<th>' + c + '</th>')].join('') + '</tr>';
+  // 渲染行
+  const tbody = document.getElementById('dm-table').querySelector('tbody');
+  if (!res.items || !res.items.length) {
+    tbody.innerHTML = '<tr><td colspan="' + (res.columns.length + 1) + '" style="text-align:center;color:var(--text-faint);padding:20px">暂无数据</td></tr>';
+  } else {
+    tbody.innerHTML = res.items.map(row =>
+      '<tr>' +
+      '<td style="white-space:nowrap"><button class="btn btn-ghost dm-edit" data-row=\'' + JSON.stringify(row).replace(/'/g, '&#39;') + '\' style="padding:4px 10px;font-size:11px;margin-right:4px">✎</button><button class="btn btn-ghost dm-del" data-id="' + row._row_id + '" style="padding:4px 10px;font-size:11px;color:var(--danger)">✕</button></td>' +
+      res.columns.map(c => '<td>' + (row[c] === null || row[c] === undefined ? '' : row[c]) + '</td>').join('') +
+      '</tr>'
+    ).join('');
+    // 绑定编辑/删除
+    tbody.querySelectorAll('.dm-edit').forEach(btn => btn.addEventListener('click', () => openEditRow(JSON.parse(btn.dataset.row))));
+    tbody.querySelectorAll('.dm-del').forEach(btn => btn.addEventListener('click', () => delRow(btn.dataset.id)));
+  }
+  document.getElementById('dm-info').textContent = '共 ' + res.total + 条 + ' · 第 ' + res.page + ' 页';
+  document.getElementById('dm-page').textContent = res.page + ' / ' + Math.max(1, Math.ceil(res.total / res.size));
+}
+document.getElementById('dm-search-btn').addEventListener('click', () => {
+  dmState.keyword = document.getElementById('dm-search').value.trim();
+  dmState.sort = document.getElementById('dm-sort').value;
+  dmState.dir = document.getElementById('dm-dir').value;
+  dmState.page = 1; loadDmRows();
+});
+document.getElementById('dm-search').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('dm-search-btn').click(); });
+document.getElementById('dm-prev').addEventListener('click', () => { if (dmState.page > 1) { dmState.page--; loadDmRows(); } });
+document.getElementById('dm-next').addEventListener('click', () => { dmState.page++; loadDmRows(); });
+document.getElementById('dm-add').addEventListener('click', () => openEditRow(null));
+document.getElementById('dm-batch').addEventListener('click', () => document.getElementById('dm-batch-file').click());
+document.getElementById('dm-batch-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  const fd = new FormData(); fd.append('file', file);
+  const r = await fetch(API_BASE + '/api/data/batch_import', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('forge_token') },
+    body: fd,
+  });
+  const res = await r.json();
+  if (res.error) return toast(res.error, 'error');
+  toast('✓ 导入成功：追加 ' + res.appended_rows + ' 行，共 ' + res.total_rows + ' 行', 'ok');
+  loadDmRows();
+  e.target.value = '';
+});
+document.getElementById('dm-export-xlsx').addEventListener('click', () => downloadExport('xlsx'));
+document.getElementById('dm-export-csv').addEventListener('click', () => downloadExport('csv'));
+async function downloadExport(fmt) {
+  const r = await fetch(API_BASE + '/api/data/export?format=' + fmt, {
+    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('forge_token') }
+  });
+  if (!r.ok) { toast('导出失败', 'error'); return; }
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'data_export.' + (fmt === 'csv' ? 'csv' : 'xlsx');
+  a.click(); URL.revokeObjectURL(url);
+}
+document.getElementById('dm-analysis').addEventListener('click', async () => {
+  document.getElementById('dm-analysis-card').style.display = '';
+  const res = await api('/api/data/analysis');
+  if (res.error) return toast(res.error, 'error');
+  // 渲染 HV 直方图
+  if (res.target_stats && res.target_stats.hist_counts) {
+    makeChart('dm-hist-chart', {
+      type: 'bar',
+      data: {
+        labels: res.target_stats.hist_bins.slice(0, -1).map(v => v.toFixed(0)),
+        datasets: [{ label: '样本数', data: res.target_stats.hist_counts, backgroundColor: 'rgba(10,132,255,.6)' }]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+        scales: { x: { grid: { color: 'rgba(15,23,42,.04)' } }, y: { grid: { color: 'rgba(15,23,42,.04)' } } } }
+    });
+  }
+  // 渲染相关性 Top 10
+  if (res.correlation_top && res.correlation_top.length) {
+    makeChart('dm-corr-chart', {
+      type: 'bar',
+      data: {
+        labels: res.correlation_top.map(x => x.element),
+        datasets: [{ label: '|相关系数|', data: res.correlation_top.map(x => x.abs_corr), backgroundColor: 'rgba(94,92,230,.6)' }]
+      },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { x: { grid: { color: 'rgba(15,23,42,.04)' } }, y: { grid: { color: 'rgba(15,23,42,.04)' } } } }
+    });
+  }
+  // 统计表
+  const statsHtml = '<div style="font-family:var(--sans);font-size:12px;font-weight:600;color:var(--text);margin-bottom:10px">特征统计摘要（前 10 个）</div>' +
+    '<div class="table-wrap"><table class="data"><thead><tr><th>特征</th><th>count</th><th>min</th><th>max</th><th>mean</th><th>std</th><th>median</th><th>Q1</th><th>Q3</th></tr></thead><tbody>' +
+    Object.entries(res.feature_stats || {}).slice(0, 10).map(([k, v]) =>
+      '<tr><td>' + k + '</td><td>' + v.count + '</td><td>' + v.min.toFixed(3) + '</td><td>' + v.max.toFixed(3) + '</td><td>' + v.mean.toFixed(3) + '</td><td>' + v.std.toFixed(3) + '</td><td>' + v.median.toFixed(3) + '</td><td>' + v.q1.toFixed(3) + '</td><td>' + v.q3.toFixed(3) + '</td></tr>'
+    ).join('') + '</tbody></table></div>';
+  document.getElementById('dm-stats-table').innerHTML = statsHtml;
+});
+document.getElementById('dm-analysis-close').addEventListener('click', () => document.getElementById('dm-analysis-card').style.display = 'none');
+
+function openEditRow(row) {
+  const isEdit = !!row;
+  document.getElementById('user-modal-title').textContent = isEdit ? '编辑行 (id=' + row._row_id + ')' : '新增一行';
+  const body = document.getElementById('user-modal').querySelector('.modal-body');
+  // 动态生成字段
+  const cols = dmState.columns.filter(c => c !== '_row_id');
+  body.innerHTML = (isEdit ? '<input type="hidden" id="um-rowid" value="' + row._row_id + '">' : '') +
+    cols.map(c => {
+      const v = isEdit ? (row[c] === null || row[c] === undefined ? '' : row[c]) : '';
+      return '<div class="field"><label class="field-label">' + c + '</label><input class="input dm-field" data-col="' + c + '" value="' + v + '"></div>';
+    }).join('');
+  document.getElementById('user-modal').style.display = 'flex';
+  document.getElementById('user-save').onclick = async () => {
+    const data = {};
+    body.querySelectorAll('.dm-field').forEach(inp => { data[inp.dataset.col] = inp.value; });
+    if (isEdit) {
+      const res = await api('/api/data/rows/' + row._row_id, { method: 'PUT', body: data });
+      if (res.error) return toast(res.error, 'error');
+      toast('✓ 已保存', 'ok');
+    } else {
+      const res = await api('/api/data/rows', { method: 'POST', body: data });
+      if (res.error) return toast(res.error, 'error');
+      toast('✓ 新增成功', 'ok');
+    }
+    document.getElementById('user-modal').style.display = 'none';
+    loadDmRows();
+  };
+}
+async function delRow(rowId) {
+  if (!confirm('确认删除该行？此操作不可恢复。')) return;
+  const res = await api('/api/data/rows/' + rowId, { method: 'DELETE' });
+  if (res.error) return toast(res.error, 'error');
+  toast('✓ 已删除', 'ok');
+  loadDmRows();
+}
+document.getElementById('user-close').addEventListener('click', () => document.getElementById('user-modal').style.display = 'none');
+document.getElementById('user-cancel').addEventListener('click', () => document.getElementById('user-modal').style.display = 'none');
+
+/* ============ PAGE · 历史记录 ============ */
+let hisState = { page: 1, size: 20 };
+function initHistory() { loadHistory(); }
+async function loadHistory() {
+  const params = new URLSearchParams({ page: hisState.page, size: hisState.size });
+  const alg = document.getElementById('his-algorithm').value;
+  const src = document.getElementById('his-source').value;
+  const from = document.getElementById('his-from').value;
+  const to = document.getElementById('his-to').value;
+  if (alg) params.set('algorithm', alg);
+  if (src) params.set('data_source', src);
+  if (from) params.set('date_from', from);
+  if (to) params.set('date_to', to);
+  const res = await api('/api/history?' + params.toString());
+  if (res.error) return toast(res.error, 'error');
+  const tbody = document.getElementById('his-table').querySelector('tbody');
+  if (!res.items || !res.items.length) {
+    tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--text-faint);padding:20px">暂无历史记录</td></tr>';
+  } else {
+    tbody.innerHTML = res.items.map(r => {
+      const m = (r.metrics && typeof r.metrics === 'object') ? r.metrics : {};
+      const test = m.test || m;
+      return '<tr>' +
+        '<td>' + r.id + '</td>' +
+        '<td>' + (r.created_at || '').replace('T', ' ').slice(0, 19) + '</td>' +
+        '<td>' + (r.username || '—') + '</td>' +
+        '<td>' + (r.task_type || '') + '</td>' +
+        '<td>' + (r.algorithm || '') + '</td>' +
+        '<td>' + (r.data_source || '') + '</td>' +
+        '<td>' + (r.n_samples || '') + '</td>' +
+        '<td>' + (test.r2 !== undefined ? (+test.r2).toFixed(4) : '—') + '</td>' +
+        '<td>' + (test.rmse !== undefined ? (+test.rmse).toFixed(2) : '—') + '</td>' +
+        '<td>' + (test.mae !== undefined ? (+test.mae).toFixed(2) : '—') + '</td>' +
+        '<td>' + (test.mape !== undefined ? (+test.mape).toFixed(2) + '%' : '—') + '</td>' +
+        '<td>' + (r.status || '') + '</td>' +
+        '<td>' + (CURRENT_USER && CURRENT_USER.role === 'admin' ? '<button class="btn btn-ghost his-del" data-id="' + r.id + '" style="padding:4px 8px;font-size:11px;color:var(--danger)">✕</button>' : '') + '</td>' +
+        '</tr>';
+    }).join('');
+    tbody.querySelectorAll('.his-del').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('删除该历史记录？')) return;
+      const res = await api('/api/history/' + b.dataset.id, { method: 'DELETE' });
+      if (res.error) return toast(res.error, 'error');
+      toast('✓ 已删除', 'ok'); loadHistory();
+    }));
+  }
+  document.getElementById('his-info').textContent = '共 ' + res.total + ' 条 · 第 ' + res.page + ' 页';
+  document.getElementById('his-page').textContent = res.page + ' / ' + Math.max(1, Math.ceil(res.total / res.size));
+}
+document.getElementById('his-search').addEventListener('click', () => { hisState.page = 1; loadHistory(); });
+document.getElementById('his-prev').addEventListener('click', () => { if (hisState.page > 1) { hisState.page--; loadHistory(); } });
+document.getElementById('his-next').addEventListener('click', () => { hisState.page++; loadHistory(); });
+document.getElementById('his-export').addEventListener('click', async () => {
+  const r = await fetch(API_BASE + '/api/history/export', {
+    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('forge_token') }
+  });
+  if (!r.ok) return toast('导出失败', 'error');
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'history.csv'; a.click();
+  URL.revokeObjectURL(url);
+});
+
+/* ============ PAGE · 用户管理 ============ */
+let usState = { page: 1, size: 50, keyword: '' };
+function initUsers() {
+  if (CURRENT_USER && CURRENT_USER.role !== 'admin') {
+    document.getElementById('us-table').querySelector('tbody').innerHTML =
+      '<tr><td colspan="8" style="text-align:center;color:var(--danger);padding:20px">仅管理员可访问</td></tr>';
+    return;
+  }
+  loadUsers();
+}
+async function loadUsers() {
+  const params = new URLSearchParams({ page: usState.page, size: usState.size, keyword: usState.keyword });
+  const res = await api('/api/users?' + params.toString());
+  if (res.error) return toast(res.error, 'error');
+  const tbody = document.getElementById('us-table').querySelector('tbody');
+  if (!res.items || !res.items.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-faint);padding:20px">暂无用户</td></tr>';
+    return;
+  }
+  tbody.innerHTML = res.items.map(u =>
+    '<tr>' +
+    '<td>' + u.id + '</td>' +
+    '<td><b>' + u.username + '</b></td>' +
+    '<td>' + (u.display_name || '—') + '</td>' +
+    '<td>' + (u.email || '—') + '</td>' +
+    '<td><span class="tag ' + (u.role === 'admin' ? 'tag-ember' : '') + '">' + u.role + '</span></td>' +
+    '<td>' + (u.created_at || '').replace('T', ' ').slice(0, 19) + '</td>' +
+    '<td>' + (u.last_login ? u.last_login.replace('T', ' ').slice(0, 19) : '—') + '</td>' +
+    '<td><button class="btn btn-ghost us-edit" data-id="' + u.id + '" style="padding:4px 10px;font-size:11px;margin-right:4px">✎</button>' +
+    (u.id === (CURRENT_USER && CURRENT_USER.id) ? '' : '<button class="btn btn-ghost us-del" data-id="' + u.id + '" style="padding:4px 10px;font-size:11px;color:var(--danger)">✕</button>') + '</td>' +
+    '</tr>'
+  ).join('');
+  tbody.querySelectorAll('.us-edit').forEach(b => b.addEventListener('click', () => openEditUser(parseInt(b.dataset.id))));
+  tbody.querySelectorAll('.us-del').forEach(b => b.addEventListener('click', async () => {
+    if (!confirm('确认删除该用户？')) return;
+    const res = await api('/api/users/' + b.dataset.id, { method: 'DELETE' });
+    if (res.error) return toast(res.error, 'error');
+    toast('✓ 已删除', 'ok'); loadUsers();
+  }));
+}
+document.getElementById('us-search').addEventListener('click', () => {
+  usState.keyword = document.getElementById('us-kw').value.trim(); loadUsers();
+});
+document.getElementById('us-kw').addEventListener('keydown', e => { if (e.key === 'Enter') loadUsers(); });
+document.getElementById('us-add').addEventListener('click', () => openEditUser(null));
+async function openEditUser(uid) {
+  const isEdit = !!uid;
+  const modal = document.getElementById('user-modal');
+  document.getElementById('user-modal-title').textContent = isEdit ? '编辑用户' : '新建用户';
+  // 重置表单
+  document.getElementById('um-id').value = uid || '';
+  document.getElementById('um-username').value = '';
+  document.getElementById('um-display_name').value = '';
+  document.getElementById('um-email').value = '';
+  document.getElementById('um-role').value = 'user';
+  document.getElementById('um-password').value = '';
+  document.getElementById('um-pwd-label').textContent = isEdit ? '重置密码（留空则不修改）' : '密码 *（至少 6 位）';
+  if (isEdit) {
+    document.getElementById('um-username').disabled = true;
+    // 拉取当前信息
+    const params = new URLSearchParams({ page: 1, size: 200 });
+    const res = await api('/api/users?' + params.toString());
+    const u = res.items && res.items.find(x => x.id === uid);
+    if (u) {
+      document.getElementById('um-username').value = u.username;
+      document.getElementById('um-display_name').value = u.display_name || '';
+      document.getElementById('um-email').value = u.email || '';
+      document.getElementById('um-role').value = u.role;
+    }
+  } else {
+    document.getElementById('um-username').disabled = false;
+  }
+  modal.style.display = 'flex';
+  document.getElementById('user-save').onclick = async () => {
+    const data = {
+      username: document.getElementById('um-username').value.trim(),
+      display_name: document.getElementById('um-display_name').value.trim(),
+      email: document.getElementById('um-email').value.trim(),
+      role: document.getElementById('um-role').value,
+      password: document.getElementById('um-password').value,
+    };
+    if (!isEdit) {
+      if (!data.username || !data.password) return toast('用户名和密码必填', 'warn');
+      const res = await api('/api/users', { method: 'POST', body: data });
+      if (res.error) return toast(res.error, 'error');
+      toast('✓ 用户已创建', 'ok');
+    } else {
+      const body = { display_name: data.display_name, email: data.email, role: data.role };
+      if (data.password) body.password = data.password;
+      const res = await api('/api/users/' + uid, { method: 'PUT', body });
+      if (res.error) return toast(res.error, 'error');
+      toast('✓ 用户已更新', 'ok');
+    }
+    modal.style.display = 'none';
+    loadUsers();
+  };
+}
+
+/* ============ PAGE · 系统设置 ============ */
+function initSettings() { loadSettings(); }
+async function loadSettings() {
+  const res = await api('/api/settings');
+  if (res.error) return toast(res.error, 'error');
+  const s = res.settings || {};
+  ['site_title', 'default_data_source', 'allow_guest_browse', 'max_upload_size_mb', 'history_retention_days'].forEach(k => {
+    const el = document.getElementById('st-' + k);
+    if (el && s[k] !== undefined) el.value = s[k];
+  });
+}
+document.getElementById('st-save').addEventListener('click', async () => {
+  const settings = {};
+  ['site_title', 'default_data_source', 'allow_guest_browse', 'max_upload_size_mb', 'history_retention_days'].forEach(k => {
+    const el = document.getElementById('st-' + k);
+    if (el) settings[k] = el.value;
+  });
+  const res = await api('/api/settings', { method: 'PUT', body: { settings } });
+  if (res.error) return toast(res.error, 'error');
+  toast('✓ 设置已保存', 'ok');
+});
+
+/* ============ INIT ============ */
+/* 启动时先检查登录，再根据 hash 恢复页面 */
+checkAuth().then(() => {
+  const initialPage = (location.hash || '').replace('#', '');
+  if (initialPage && document.getElementById('page-' + initialPage)) {
+    navigate(initialPage);
+  } else {
+    navigate('dashboard');
+  }
+  toast('✓ FORGE 系统就绪 · 论文对齐版（11 页面）');
+});

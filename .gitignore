@@ -39,3 +39,12 @@ desktop.ini
 *.bak
 .check.ps1
 .find_git.ps1
+
+# ===== 应用运行时数据 =====
+# SQLite 数据库（含用户密码 hash，禁止提交）
+forge.db
+forge.db-journal
+forge.db-wal
+forge.db-shm
+# 用户上传的数据文件（运行时生成）
+uploads/
