@@ -1,12 +1,27 @@
 # FORGE-HV
 
-> **HGMX 高温合金机器学习实验台**
+> **HGMX 高温合金机器学习实验台（论文对齐版 v3.1）**
 > FORGE: FRamework for Optimizing superalloy GEneration
 
-通过 **22 种元素成分 + 70 维微结构特征** 预测**维氏硬度（HV）**，包含数据可视化、异常检测、特征工程、回归模型训练、模型比较、深度强化学习（DDPG）、主动学习优化等完整功能。
+严格对照论文《基于深度确定性策略梯度的合金维氏硬度预测算法》裁剪，仅保留论文涉及的功能与算法。通过 **22 种元素成分 + 70 维 DINO-v2 微结构特征** 预测**维氏硬度（HV）**。
 
-- 前端：`frontend/index.html`（浏览器打开即可）
+- 前端：`frontend/index.html`（浏览器打开即可，浅色主题）
 - 后端：`app.py`（Flask 服务，端口 5000）
+
+---
+
+## 论文对齐说明
+
+| 维度 | 论文章节 | 本项目实现 |
+|---|---|---|
+| 数据准备 | 第 2 章 | 149 条实测样本（70 微结构 + 22 成分 + 1 硬度），支持 Excel/CSV 导入 |
+| 异常值检测 | 第 2 章公式(1)(2)(3) | 分位数截断（quantile_clip）+ IsolationForest / IQR / Z-score |
+| DDPG 网络设计 | 第 3 章 | Actor-Critic 网络、优先经验回放、五段式奖励 |
+| DDPG 训练策略 | 第 4 章 | 高斯噪声探索 + 异步训练 + 状态轮询 |
+| 对比算法 | 第 5.1 节 | **严格 4 种**：LinearRegression / PolynomialRegression / SVR / DDPG |
+| 评估指标 | 第 5.2 节 | **严格 4 个**：RMSE / MAE / R² / MAPE |
+| 原始数据对比 | 第 5.3 节 | 4 算法在 149 条实测数据上的横向对比 |
+| GAN 数据扩充对比 | 第 5.4 节 | 4 算法在 GAN 扩充数据上的横向对比 |
 
 ---
 
@@ -63,7 +78,7 @@ pip install torch --index-url https://download.pytorch.org/whl/cu126 --force-rei
 ### 验证安装
 
 ```bash
-python -c "import flask, sklearn, pandas, numpy, xgboost; print('基础依赖 OK')"
+python -c "import flask, sklearn, pandas, numpy; print('基础依赖 OK')"
 python -c "import torch; print('PyTorch', torch.__version__, 'CUDA', torch.cuda.is_available())"
 ```
 
@@ -96,25 +111,50 @@ python app.py
 
 ---
 
-## 使用流程
+## 页面结构（7 个功能页，严格对齐论文章节）
 
-浏览器打开 `index.html` 后，左侧是导航栏。推荐按以下顺序体验：
+浏览器打开 `index.html` 后，左侧导航栏按论文章节分组：
 
-| 模块 | 功能 |
-|---|---|
-| 数据可视化 | 查看元素分布、相关性矩阵 |
-| 异常值检测 | IsolationForest 检测离群样本 |
-| 数据库管理 | 可视化查询数据 |
-| 特征相关性 | Pearson/Spearman 相关性 |
-| 特征重要性 | 各元素对硬度的影响 |
-| 聚类与降维 | PCA + K-Means 聚类 |
-| 单一模型 | 训练单个回归模型（推荐 ExtraTrees + 特征筛选 importance + 目标变换 log） |
-| 模型比较 | 横向对比多个算法 |
-| 深度强化学习 | DDPG 异步训练（需 PyTorch） |
-| 单目标优化 | 主动学习推荐新配方 |
-| 代码优化 | 系统监控 + 参数推荐 |
+| 页面 | 论文章节 | 功能 |
+|---|---|---|
+| 数据可视化 | 第 2 章 | 数据导入（Excel/CSV）+ 元素分布 + 硬度直方图 + 数据结构说明 |
+| 异常值检测 | 第 2 章公式(1)(2)(3) | 分位数截断（quantile_clip）+ IsolationForest / IQR / Z-score |
+| 元素相关性 | 第 2 章 | 22 种元素成分相关性矩阵（Pearson / Spearman / Kendall） |
+| 数据库管理 | — | 结构化查询构建器（保留） |
+| DDPG 训练 | 第 3-4 章 | Actor-Critic 异步训练 + 实时进度轮询 + 测试集散点图 |
+| 5.3 硬度预测对比 | 第 5.3 节 | 原始 149 条数据：LR / PR / SVR / DDPG 横向对比 |
+| 5.4 GAN 数据扩充对比 | 第 5.4 节 | GAN 扩充数据：LR / PR / SVR / DDPG 横向对比 |
+
+**对比算法（论文 5.1 节，严格 4 种）**：
+- LinearRegression（LR）
+- PolynomialRegression（PR，二次多项式 + Ridge）
+- SVR（支持向量回归，RBF 核）
+- DDPG（深度确定性策略梯度）
+
+**评估指标（论文 5.2 节，严格 4 个）**：
+- RMSE — 均方根误差
+- MAE — 平均绝对误差
+- R² — 决定系数
+- MAPE — 平均绝对百分比误差
 
 训练后可点击"导出 CSV"下载预测结果，或"导出模型"下载 pkl 文件。
+
+---
+
+## 数据结构与导入
+
+**数据集构成**（论文第 2 章）：
+- 样本数：**149 条**实测合金数据
+- 每条样本 = **70 维微结构特征**（DINO-v2 自监督模型提取 → PCA 降维）
+            + **22 维成分特征**（Al/W/Ta/Ti/Cr/Ni/Mo/Hf/C/Co/B/V/Si/Fe/Nb/Zr/Re/Cb/Ce/Mn/S/P）
+            + **1 维目标值**（维氏硬度 HV）
+- GAN 扩充数据：10000 条生成样本（论文 5.4 节用）
+
+**数据导入功能**：
+- 在「数据可视化」页面点击「导入数据文件」按钮
+- 支持 `.xlsx` / `.xls` / `.csv` 三种格式
+- 文件必须包含目标列 `Vickers Hardness (HV)`（或含 hardness/HV 的列）
+- 导入后自动切换数据源，点击「恢复默认数据」可切回原始 149 条数据
 
 ---
 
@@ -122,9 +162,9 @@ python app.py
 
 ```
 FORGE-HV/
-├── app.py                # 后端 Flask 服务（核心）
-├── config.py             # 配置文件（路径、参数）
-├── CT_main.py            # 离线训练脚本
+├── app.py                # 后端 Flask 服务（核心，1119 行，论文对齐版）
+├── config.py             # 配置文件（22 元素列名、路径、模型参数）
+├── CT_main.py            # GAN 数据加载与特征工程工具
 ├── run_all.py            # 一键流水线（可选）
 ├── plot_utils.py         # 绘图工具
 ├── DDPG.py               # DDPG 离线脚本
@@ -138,14 +178,14 @@ FORGE-HV/
 ├── data/                 # 数据文件
 │   ├── data.xlsx                  # 原始数据
 │   ├── data_converted.xlsx        # 单位换算后
-│   └── data_with_microstructure.xlsx  # 含微结构特征（后端读这个）
+│   └── data_with_microstructure.xlsx  # 含微结构特征（后端读这个，149 条实测）
 │
-├── frontend/             # 前端代码
-│   ├── index.html        # 页面结构
-│   ├── app.js            # 交互逻辑
-│   └── styles.css        # 样式
+├── frontend/             # 前端代码（浅色主题 v3.1）
+│   ├── index.html        # 页面结构（7 页面，643 行）
+│   ├── app.js            # 交互逻辑（1065 行）
+│   └── styles.css        # 浅色主题样式（1121 行）
 │
-├── generated_data/       # GAN 生成数据
+├── generated_data/       # GAN 生成数据 + 用户上传数据
 ├── results/              # 输出结果
 ├── model/                # 模型保存
 └── output/               # 其他输出
@@ -157,13 +197,12 @@ FORGE-HV/
 
 | 项 | 内容 |
 |---|---|
-| 数据集 | 149 条实测高温合金样本 |
+| 数据集 | 149 条实测高温合金样本 + 10000 条 GAN 生成样本 |
 | 特征 | 22 元素成分 + 70 维 DINO-v2 微结构特征 = 92 维 |
-| 目标 | 维氏硬度 HV（范围约 160~500） |
-| 最佳模型 | ExtraTrees + 特征筛选 Top30 + 目标 log 变换 |
-| 测试集表现 | R² = 0.74，RMSE = 43 HV |
-
-**支持的算法**：LinearRegression / Ridge / Lasso / BayesianRidge / HuberRegressor / PolynomialRegression / SVR(RBF/Linear) / RandomForest / ExtraTrees / GradientBoosting / AdaBoost / Bagging / MLP / XGBoost / Stacking / GaussianProcessRegressor / KernelRidge
+| 目标 | 维氏硬度 HV（范围约 174~489，σ ≈ 62.4） |
+| 对比算法 | LR / PR / SVR / DDPG（论文 5.1 节） |
+| 评估指标 | RMSE / MAE / R² / MAPE（论文 5.2 节） |
+| 前端主题 | 浅灰白底（#F7F8FA）+ 蓝色强调（#0A84FF），Apple/iOS 设计语言 |
 
 ---
 
@@ -176,16 +215,16 @@ A：后端 `app.py` 没运行。按"运行步骤"启动后端。
 A：依赖没装。按"安装步骤"重装，确认装到了正确的 Python/conda 环境。
 
 **Q：DDPG 训练很慢？**
-A：没有 GPU 会用 CPU 很慢。epochs 建议先设 500 试水，有 GPU 可设 2000+。
+A：没有 GPU 会用 CPU 很慢。epochs 建议先设 500 试水，有 GPU 可设 2000+。前端默认 30s 超时，对比实验 DDPG 轮询最大等待 10 分钟。
 
-**Q：训练 R² 很低？**
-A：开启"增强选项"面板，特征筛选选 `importance`，目标变换选 `log`，R² 可从 0.51 提升到 0.74。
+**Q：5.3 / 5.4 对比实验 DDPG 卡在"训练中"？**
+A：DDPG 是异步训练，前端会每 2 秒轮询一次状态，最大等待 10 分钟。若超时请检查后端控制台是否报错。
+
+**Q：导入数据后怎么切回原始数据？**
+A：在「数据可视化」页面点击「恢复默认数据」按钮，后端会重置数据源到 `data/data_with_microstructure.xlsx`。
 
 **Q：端口 5000 被占用？**
-A：修改 `app.py` 最后一行 `port=5000` 为其他端口（如 8080），同时修改 `frontend/app.js` 第 83 行 `API_BASE` 的端口。
-
-**Q：怎么查看当前 R² 最高的模型？**
-A：去"模型比较"页面训练一次，会自动列出各算法 R² 排名。
+A：修改 `app.py` 最后一行 `port=5000` 为其他端口（如 8080），同时修改 `frontend/app.js` 中 `API_BASE` 的端口。
 
 ---
 
@@ -196,13 +235,17 @@ A：去"模型比较"页面训练一次，会自动列出各算法 R² 排名。
 | torch | 2.0.0 | 深度学习（DDPG 用，可选） |
 | numpy | 1.24.0 | 数值计算 |
 | pandas | 2.0.0 | 数据处理 |
-| scikit-learn | 1.0.0 | 机器学习 |
+| scikit-learn | 1.0.0 | 机器学习（LR/PR/SVR/IsolationForest） |
 | matplotlib | 3.5.0 | 绘图（离线脚本用） |
 | seaborn | 0.12.0 | 统计绘图（离线脚本用） |
 | openpyxl | 3.0.0 | 读写 Excel |
 | flask | 3.0.0 | Web 后端 |
 | flask-cors | 4.0.0 | 跨域支持 |
-| xgboost | 2.0.0 | XGBoost 算法 |
 | scipy | 1.10.0 | 科学计算 |
-| psutil | 5.9.0 | 系统监控 |
 | joblib | 1.3.0 | 模型序列化 |
+
+---
+
+## License
+
+MIT License — 他人可自由使用、修改、商业化，仅需保留版权声明。
