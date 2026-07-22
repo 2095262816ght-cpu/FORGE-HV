@@ -71,7 +71,12 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 from flask import Flask, jsonify, request, g
-from flask_cors import CORS
+try:
+    from flask_cors import CORS
+    _HAS_CORS = True
+except ImportError:
+    _HAS_CORS = False
+    print("[warn] flask-cors 未安装；四栈模式下 CORS 由 Spring Boot 处理，可忽略。pip install flask-cors")
 
 # 确保能 import 项目模块
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -108,7 +113,10 @@ except ImportError:
     _HAS_TORCH = False
 
 app = Flask(__name__)
-CORS(app)  # 允许前端跨域访问
+if _HAS_CORS:
+    CORS(app)  # 允许前端跨域访问（旧 Flask 单体入口用；四栈下由 Spring 处理）
+else:
+    pass
 
 # 目标变量列名：维氏硬度 HV
 TARGET_COL = "Vickers Hardness (HV)"
@@ -123,6 +131,36 @@ _LAST_TRAIN_CACHE = {
 
 # 用户上传的数据文件路径（若上传过则覆盖默认数据文件）
 _UPLOADED_DATA_PATH = {"path": None}
+_UPLOAD_STATE_FILE = os.path.join(config.BASE_DIR, "generated_data", "upload_state.json")
+
+
+def _persist_upload_state():
+    """把当前上传数据源写入磁盘，重启 ML 服务后仍可恢复。"""
+    os.makedirs(os.path.dirname(_UPLOAD_STATE_FILE), exist_ok=True)
+    path = _UPLOADED_DATA_PATH.get("path")
+    payload = {
+        "path": path if path and os.path.exists(path) else None,
+        "updated_at": time.time(),
+    }
+    with open(_UPLOAD_STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def _restore_upload_state():
+    """启动时恢复上次上传的数据源。"""
+    try:
+        if not os.path.exists(_UPLOAD_STATE_FILE):
+            return
+        with open(_UPLOAD_STATE_FILE, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        path = payload.get("path")
+        if path and os.path.exists(path):
+            _UPLOADED_DATA_PATH["path"] = path
+    except Exception:
+        pass
+
+
+_restore_upload_state()
 
 
 def _current_data_path():
@@ -382,11 +420,16 @@ def login_required(admin_only: bool = False, guest_allowed: bool = False):
 
     若系统设置 allow_guest_browse=true 且请求未带 token，
     自动注入游客身份（仅当 guest_allowed=True 时）。
+
+    环境变量 FORGE_ML_SERVICE=1 时跳过鉴权（由 Spring Boot 统一鉴权后转发）。
     """
     from functools import wraps
     def deco(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
+            if os.environ.get("FORGE_ML_SERVICE") == "1":
+                g.user = {"user_id": 0, "username": "ml-service", "role": "admin"}
+                return fn(*args, **kwargs)
             payload = _parse_token()
             if not payload:
                 # 无 token：若开启游客模式且本接口允许游客，注入游客身份
@@ -477,19 +520,41 @@ def data_columns():
 @app.route("/api/data/preview")
 @login_required(guest_allowed=True)
 def data_preview():
-    """数据预览：返回前 n 行（默认 10，最大 500）"""
+    """数据预览：返回前 n 行（默认 20，最大 500）"""
     try:
-        n = int(request.args.get("n", 10))
+        n = int(request.args.get("n", request.args.get("limit", 20)))
         n = max(1, min(n, 500))
-        df = pd.read_excel(_current_data_path())
+        path = _current_data_path()
+        if str(path).lower().endswith(".csv"):
+            df = pd.read_csv(path)
+        else:
+            df = pd.read_excel(path)
+        # 优先展示：成分 + HV；微结构列一并保留在 all 预览中
         want_cols = ["Image_Name"] + config.composition_columns + [TARGET_COL]
-        cols = [c for c in want_cols if c in df.columns]
-        sub = df[cols].head(n)
+        micro_cols = [c for c in df.columns if c not in want_cols]
+        cols = [c for c in want_cols if c in df.columns] + micro_cols[:70]
+        if not cols:
+            cols = list(df.columns)[:40]
+        sub = df[cols].head(n).replace({np.nan: None})
+        rows = []
+        for _, row in sub.iterrows():
+            item = {}
+            for c in cols:
+                v = row[c]
+                if isinstance(v, (np.floating, float)):
+                    item[c] = float(v)
+                elif isinstance(v, (np.integer, int)):
+                    item[c] = int(v)
+                else:
+                    item[c] = v
+            rows.append(item)
         return jsonify({
             "columns": cols,
-            "rows": sub.values.tolist(),
-            "total": len(df),
+            "rows": rows,
+            "total": int(len(df)),
             "n": n,
+            "filename": os.path.basename(path),
+            "using_uploaded": _UPLOADED_DATA_PATH["path"] is not None,
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -501,22 +566,61 @@ def data_preview():
 @app.route("/api/data/stats")
 @login_required(guest_allowed=True)
 def data_stats():
-    """统计摘要：样本数、元素数、HV 的 min/max/mean/std/median"""
+    """统计摘要：样本数、元素分布、HV 直方图等（供数据可视化页）"""
     try:
-        df = pd.read_excel(_current_data_path())
-        y = df[TARGET_COL].dropna()
+        path = _current_data_path()
+        if str(path).lower().endswith(".csv"):
+            df = pd.read_csv(path)
+        else:
+            df = pd.read_excel(path)
+        y = df[TARGET_COL].dropna() if TARGET_COL in df.columns else pd.Series(dtype=float)
+
+        # 22 种元素含量统计
+        element_stats = {}
+        for el in config.composition_columns:
+            if el not in df.columns:
+                continue
+            s = pd.to_numeric(df[el], errors="coerce").dropna()
+            if s.empty:
+                continue
+            element_stats[el] = {
+                "mean": safe_float(s.mean()),
+                "median": safe_float(s.median()),
+                "q1": safe_float(s.quantile(0.25)),
+                "q3": safe_float(s.quantile(0.75)),
+                "min": safe_float(s.min()),
+                "max": safe_float(s.max()),
+            }
+
+        # HV 直方图
+        hv_hist = {"bins": [], "counts": []}
+        if len(y) > 0:
+            counts, bin_edges = np.histogram(y.values, bins=16)
+            hv_hist = {
+                "bins": [safe_float(v) for v in bin_edges.tolist()],
+                "counts": [int(v) for v in counts.tolist()],
+            }
+
+        n_samples = int(len(df))
         return jsonify({
-            "n_samples": int(len(df)),
+            "n_samples": n_samples,
+            "n_rows": n_samples,  # 前端兼容字段
+            "n_cols": int(len(df.columns)),
             "n_elements": len(config.composition_columns),
             "n_microstructure": 70,
-            "hv_min": safe_float(y.min()),
-            "hv_max": safe_float(y.max()),
-            "hv_mean": safe_float(y.mean()),
-            "hv_std": safe_float(y.std()),
-            "hv_median": safe_float(y.median()),
+            "hv_min": safe_float(y.min()) if len(y) else None,
+            "hv_max": safe_float(y.max()) if len(y) else None,
+            "hv_mean": safe_float(y.mean()) if len(y) else None,
+            "hv_std": safe_float(y.std()) if len(y) else None,
+            "hv_median": safe_float(y.median()) if len(y) else None,
+            "element_stats": element_stats,
+            "hv_hist": hv_hist,
+            "filename": os.path.basename(path),
+            "data_path": path,
             "using_uploaded": _UPLOADED_DATA_PATH["path"] is not None,
         })
     except Exception as e:
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
@@ -565,13 +669,15 @@ def data_upload():
                     "error": f"文件缺少目标列 '{TARGET_COL}'（或含 hardness/HV 的列）"
                 }), 400
 
-        # 切换数据源
+        # 切换数据源并持久化（刷新 / 重启 ML 后仍可恢复）
         _UPLOADED_DATA_PATH["path"] = save_path
+        _persist_upload_state()
         return jsonify({
             "status": "ok",
             "filename": f.filename,
             "saved_path": save_path,
             "n_rows": int(len(df)),
+            "n_samples": int(len(df)),
             "n_cols": int(len(df.columns)),
             "columns": list(df.columns)[:30],
         })
@@ -585,6 +691,7 @@ def data_upload():
 def data_reset():
     """重置为默认数据文件（取消使用上传数据）"""
     _UPLOADED_DATA_PATH["path"] = None
+    _persist_upload_state()
     return jsonify({"status": "ok", "using_uploaded": False})
 
 
@@ -728,6 +835,10 @@ def train_compare():
                     build_model(name), X_train, y_train,
                     cv=cv_folds, scoring="r2", n_jobs=-1,
                 )
+                scatter = [
+                    {"x": safe_float(y_test[i]), "y": safe_float(y_pred[i])}
+                    for i in range(len(y_test))
+                ]
                 results.append({
                     "model": name,
                     "r2": safe_float(mt["R2_value"]),
@@ -738,6 +849,7 @@ def train_compare():
                     "cv_r2_std": float(np.std(cv_scores)),
                     "cv_scores": [float(s) for s in cv_scores],
                     "time": round(time.time() - t0, 2),
+                    "scatter": scatter,
                     "error": None,
                 })
             except Exception as e:
@@ -745,6 +857,7 @@ def train_compare():
                     "model": name, "r2": None, "rmse": None, "mae": None,
                     "mape": None, "cv_r2_mean": None, "cv_r2_std": None,
                     "cv_scores": [], "time": round(time.time() - t0, 2),
+                    "scatter": [],
                     "error": str(e),
                 })
 

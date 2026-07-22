@@ -1,0 +1,41 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: forge-hv-backend
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  datasource:
+    url: ${FORGE_DB_URL:jdbc:mysql://localhost:3306/forge_hv?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false}
+    username: ${FORGE_DB_USER:root}
+    password: ${FORGE_DB_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+forge:
+  jwt:
+    # 生产环境务必设置 FORGE_JWT_SECRET（≥32 字节）
+    secret: ${FORGE_JWT_SECRET:forge-hv-dev-only-secret-key-change-me!!}
+    expiration-hours: ${FORGE_JWT_EXPIRATION_HOURS:24}
+  ml-service:
+    base-url: ${FORGE_ML_BASE_URL:http://127.0.0.1:5001}
+    connect-timeout-ms: ${FORGE_ML_CONNECT_TIMEOUT_MS:5000}
+    read-timeout-ms: ${FORGE_ML_READ_TIMEOUT_MS:600000}
+  data:
+    upload-dir: ${user.dir}/../uploads
+
+logging:
+  level:
+    com.forge.hv: INFO

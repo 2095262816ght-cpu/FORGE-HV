@@ -48,3 +48,15 @@ forge.db-wal
 forge.db-shm
 # 用户上传的数据文件（运行时生成）
 uploads/
+
+# ===== Node / Vue =====
+node_modules/
+frontend-vue/dist/
+frontend-vue/.vite/
+
+# ===== Java / Maven =====
+backend/target/
+backend/src/main/resources/application-local.yml
+
+# ===== IDE =====
+*.iml
