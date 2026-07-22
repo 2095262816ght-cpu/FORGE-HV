@@ -1016,6 +1016,8 @@ function initCmp53() {
   });
 
   document.getElementById('cmp53-run').addEventListener('click', () => runCmpExperiment('53'));
+  /* 进入页面自动渲染论文真实散点数据（无需点按钮即可查看） */
+  renderCmpScatter('cmp53', null, '');
 }
 
 /* ============ CMP54 · 5.4 GAN 数据扩充对比 ============ */
@@ -1032,6 +1034,8 @@ function initCmp54() {
     c.addEventListener('click', () => c.classList.toggle('on'));
   });
   document.getElementById('cmp54-run').addEventListener('click', () => runCmpExperiment('54'));
+  /* 进入页面自动渲染论文真实散点数据（无需点按钮即可查看） */
+  renderCmpScatter('cmp54', null, '');
 }
 
 /**
@@ -1158,11 +1162,12 @@ function pollDDPGForCompare(taskId, prefix) {
 
 /**
  * 渲染对比页 4 张散点图（DDPG / LR / PR / SVR 各一张，对应论文图 2-5）
- * - 优先使用后端返回的真实散点数据（DDPG）
- * - LR / PR / SVR 用基于论文误差指标的模拟散点（展示分布特性）
+ * - 默认使用 scatter_data.js 中的论文真实数据（5482 个点，来自 results/ Excel）
+ * - 若后端训练返回了新 DDPG 数据，则覆盖 DDPG 图
+ * - 全部为真实预测值，无模拟散点
  * @param {string} prefix - 'cmp53' 或 'cmp54'
- * @param {Array} scatter - DDPG 真实散点数据 [{x: 真实, y: 预测}, ...]
- * @param {string} title - 保留参数（4 图模式下不再使用单一标题）
+ * @param {Array} scatter - 后端返回的 DDPG 真实散点（可选，覆盖静态数据）
+ * @param {string} title - 保留参数
  */
 function renderCmpScatter(prefix, scatter, title) {
   /* 4 个算法的画布 id 与配色 */
@@ -1173,49 +1178,40 @@ function renderCmpScatter(prefix, scatter, title) {
     { key: 'svr',  color: '#FF9F0A', bg: 'rgba(255,159,10,.55)',  label: 'SVR' },
   ];
 
-  /* 真实 HV 采样区间（论文数据硬度范围 174-489） */
-  const TRUE_RANGE = [180, 480];
-
-  /* 根据算法生成模拟散点：误差越大，散点偏离 y=x 越远
-     误差参数基于论文表 1/2、3/4 的 RMSE 粗略映射 */
-  function genScatter(modelKey, isGAN) {
-    const N = 40;  // 每图 40 个点
-    const params = {
-      ddpg: { rmse: isGAN ? 15 : 70,  bias: 0 },
-      lr:   { rmse: isGAN ? 18 : 200, bias: isGAN ? 0 : 5 },
-      pr:   { rmse: isGAN ? 1500 : 200, bias: isGAN ? -20 : 5 },  // GAN 后 PR 严重过拟合
-      svr:  { rmse: isGAN ? 19 : 88,  bias: isGAN ? 0 : 3 },
-    };
-    const p = params[modelKey] || { rmse: 30, bias: 0 };
-    const pts = [];
-    for (let i = 0; i < N; i++) {
-      const x = TRUE_RANGE[0] + (TRUE_RANGE[1] - TRUE_RANGE[0]) * (i + 0.5) / N + (Math.random() - 0.5) * 10;
-      const noise = (Math.random() - 0.5) * 2 * p.rmse + p.bias;
-      const y = Math.max(150, Math.min(500, x + noise));
-      pts.push({ x, y });
-    }
-    return pts;
-  }
-
-  /* DDPG 优先使用后端真实数据 */
-  const ddpgScatter = (scatter && scatter.length) ? scatter.map(p => ({ x: p.x, y: p.y })) : genScatter('ddpg', prefix === 'cmp54');
-  const isGAN = prefix === 'cmp54';
+  /* 从 scatter_data.js 读取论文真实数据 */
+  const REAL_DATA = (typeof SCATTER_DATA !== 'undefined' && SCATTER_DATA[prefix]) ? SCATTER_DATA[prefix] : null;
 
   MODELS.forEach(m => {
     const canvasId = 'ch-' + prefix + '-scatter-' + m.key;
-    const data = m.key === 'ddpg' ? ddpgScatter : genScatter(m.key, isGAN);
+    /* 优先级：后端返回数据 > 静态真实数据 > 空 */
+    let data = [];
+    if (m.key === 'ddpg' && scatter && scatter.length) {
+      data = scatter.map(p => ({ x: p.x, y: p.y }));
+    } else if (REAL_DATA && REAL_DATA[m.key] && REAL_DATA[m.key].length) {
+      data = REAL_DATA[m.key];
+    }
+    if (!data.length) return;  /* 无数据则不渲染 */
+
+    /* 坐标范围自适应 */
     const allVals = data.flatMap(p => [p.x, p.y]);
-    const minV = Math.min(...allVals, ...TRUE_RANGE) - 10;
-    const maxV = Math.max(...allVals, ...TRUE_RANGE) + 10;
+    const minV = Math.min(...allVals) - 10;
+    const maxV = Math.max(...allVals) + 10;
+
+    /* 点数多时缩小点尺寸，避免重叠 */
+    const pointRadius = data.length > 500 ? 2 : (data.length > 100 ? 2.5 : 3.5);
+
     makeChart(canvasId, {
       type: 'scatter',
       data: { datasets: [
-        { label: m.label + ' 测试集', data, backgroundColor: m.bg, borderColor: m.color, borderWidth: 1, pointRadius: 3.5 },
-        { label: 'y=x', data: [{ x: minV, y: minV }, { x: maxV, y: maxV }], type: 'line', borderColor: 'rgba(16,185,129,.55)', borderWidth: 1, borderDash: [4, 4], pointRadius: 0, fill: false }
+        { label: m.label + ' 测试集 (' + data.length + ' 点)', data, backgroundColor: m.bg, borderColor: m.color, borderWidth: 1, pointRadius: pointRadius },
+        { label: 'y=x 理想预测', data: [{ x: minV, y: minV }, { x: maxV, y: maxV }], type: 'line', borderColor: 'rgba(16,185,129,.65)', borderWidth: 1.5, borderDash: [4, 4], pointRadius: 0, fill: false }
       ] },
       options: {
         maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => '真实: ' + c.raw.x.toFixed(1) + ' → 预测: ' + c.raw.y.toFixed(1) } } },
+        plugins: {
+          legend: { display: true, position: 'bottom', labels: { color: '#64748b', font: { size: 9 }, boxWidth: 10, padding: 6 } },
+          tooltip: { callbacks: { label: c => '真实: ' + c.raw.x.toFixed(1) + ' HV → 预测: ' + c.raw.y.toFixed(1) + ' HV' } }
+        },
         scales: {
           x: { title: { display: true, text: '真实 HV', color: '#475569', font: { size: 10 } }, grid: { color: 'rgba(15, 23, 42, .04)' }, ticks: { color: '#64748b', font: { size: 9 } }, min: minV, max: maxV },
           y: { title: { display: true, text: '预测 HV', color: '#475569', font: { size: 10 } }, grid: { color: 'rgba(15, 23, 42, .04)' }, ticks: { color: '#64748b', font: { size: 9 } }, min: minV, max: maxV }
