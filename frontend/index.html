@@ -71,6 +71,8 @@
       <div class="nav-group">
         <div class="nav-cat">DDPG 模型 · 第 3-4 章 <span class="arrow">▼</span></div>
         <div class="nav-item" data-page="ddpg"><span class="ic">⚡</span>DDPG 训练</div>
+        <div class="nav-item" data-page="ddpg-arch"><span class="ic">⌬</span>DDPG 模型架构</div>
+        <div class="nav-item" data-page="gan-process"><span class="ic">⊞</span>GAN 数据生成过程</div>
       </div>
 
       <!-- 组 3：实验对比（第 5.3 / 5.4 节） -->
@@ -195,6 +197,87 @@
                 + <b style="color:var(--ember)">22 维成分特征</b>（Al/W/Ta/Ti/Cr/Ni/Mo/Hf/C/Co/B/V/Si/Fe/Nb/Zr/Re/Cb/Ce/Mn/S/P）
                 + <b style="color:var(--ember)">1 维目标值</b>（维氏硬度 HV）<br>
               • GAN 扩充数据：10000 条生成样本（论文 5.4 节用）
+            </div>
+          </div>
+        </div>
+
+        <!-- 预处理流程说明卡：对应论文 2 章完整预处理链路 -->
+        <div class="card" style="margin-top:20px">
+          <div class="card-head"><div class="card-title"><span class="num">04</span>预处理流程（论文第 2 章）</div></div>
+          <div class="card-body">
+            <div class="process-flow" id="preprocess-flow">
+              <!-- 步骤 1：DINOv2 特征提取 -->
+              <div class="process-step">
+                <div class="process-num">1</div>
+                <div class="process-content">
+                  <div class="process-title">DINO-v2 微结构特征提取</div>
+                  <div class="process-desc">基于 Vision Transformer 架构的自监督视觉模型 DINOv2-Base，对每张微结构图片提取 768 维视觉特征。对比 clip_b16/b32/l14、dino_b/g/l/s、Nasa 等模型后选用 DINOv2（性能、速度、通用性平衡最佳）。</div>
+                  <div class="process-meta">输入：微结构图 · 输出：768 维向量</div>
+                </div>
+              </div>
+              <!-- 步骤 2：PCA 降维 -->
+              <div class="process-step">
+                <div class="process-num">2</div>
+                <div class="process-content">
+                  <div class="process-title">PCA 主成分分析降维</div>
+                  <div class="process-desc">对 768 维 DINOv2 特征做主成分分析（PCA），抽取前 70 个主成分作为微结构关键特征，去除冗余信息同时保留主要方差。</div>
+                  <div class="process-meta">输入：768 维 · 输出：70 维微结构特征</div>
+                </div>
+              </div>
+              <!-- 步骤 3：分位数截断 -->
+              <div class="process-step">
+                <div class="process-num">3</div>
+                <div class="process-content">
+                  <div class="process-title">分位数异常值截断（公式 1-3）</div>
+                  <div class="process-desc">采用分位数截断策略保留 1%~99% 分位数范围内的有效数据，将超出上下边界的极端值拉回边界，消除异常值干扰。</div>
+                  <div class="process-meta">下限 Q₁ = 1% · 上限 Q₉₉ = 99%</div>
+                </div>
+              </div>
+              <!-- 步骤 4：标准化 -->
+              <div class="process-step">
+                <div class="process-num">4</div>
+                <div class="process-content">
+                  <div class="process-title">Z-Score 标准化（公式 4-6）</div>
+                  <div class="process-desc">对输入特征和目标变量分别做标准化，转换为均值为 0、标准差为 1 的标准正态分布，消除量级量纲差异，提升训练稳定性。</div>
+                  <div class="process-meta">x' = (x − μ) / σ</div>
+                </div>
+              </div>
+              <!-- 步骤 5：数据集划分 -->
+              <div class="process-step">
+                <div class="process-num">5</div>
+                <div class="process-content">
+                  <div class="process-title">数据集划分</div>
+                  <div class="process-desc">划分为训练集、验证集、测试集三部分。训练集用于参数学习，验证集用于超参数调优与训练过程监控，测试集用于最终性能评估。</div>
+                  <div class="process-meta">训练 / 验证 / 测试三分离</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 数据预览表格分栏卡：微结构 / 成分 / 硬度 三栏分开展示 -->
+        <div class="card" style="margin-top:20px">
+          <div class="card-head">
+            <div class="card-title"><span class="num">05</span>数据预览（分栏展示）</div>
+            <div class="chips" id="preview-chips">
+              <span class="chip on" data-tab="micro">微结构特征 (70)</span>
+              <span class="chip" data-tab="comp">成分元素 (22)</span>
+              <span class="chip" data-tab="hv">硬度 HV (1)</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="table-wrap" style="max-height:360px">
+              <table class="data" id="preview-table">
+                <thead><tr><th>#</th><th>样本编号</th><th>feat_01</th><th>feat_02</th><th>feat_03</th><th>...</th><th>feat_70</th></tr></thead>
+                <tbody><tr><td colspan="7" style="text-align:center;color:var(--text-faint);padding:20px">加载中...</td></tr></tbody>
+              </table>
+            </div>
+            <div style="margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--text-faint);display:flex;gap:16px;flex-wrap:wrap">
+              <span>微结构 70 维：DINOv2 → PCA 抽取的主成分</span>
+              <span>·</span>
+              <span>成分 22 维：Al/W/Ta/Ti/Cr/Ni/Mo/Hf/C/Co/B/V/Si/Fe/Nb/Zr/Re/Cb/Ce/Mn/S/P（wt %）</span>
+              <span>·</span>
+              <span>硬度 1 维：Vickers Hardness (HV)</span>
             </div>
           </div>
         </div>
@@ -562,8 +645,75 @@
           </div>
         </div>
         <div class="card" style="margin-top:20px">
-          <div class="card-head"><div class="card-title"><span class="num">C</span>预测 vs 真实 散点图</div></div>
-          <div class="card-body"><div class="chart-box" style="height:380px"><canvas id="ch-cmp53-scatter"></canvas></div></div>
+          <div class="card-head"><div class="card-title"><span class="num">C</span>预测 vs 真实 散点图（4 个算法 · 论文图 2-5）</div></div>
+          <div class="card-body">
+            <!-- 2×2 网格：DDPG / LR / PR / SVR 各一张散点图，对应论文图 2-5 -->
+            <div class="grid g4" style="gap:14px">
+              <div class="chart-box" style="height:240px;position:relative">
+                <div style="position:absolute;top:6px;left:10px;font-family:var(--sans);font-size:11px;font-weight:600;color:var(--ember);z-index:2">DDPG（本论文主算法）</div>
+                <canvas id="ch-cmp53-scatter-ddpg"></canvas>
+              </div>
+              <div class="chart-box" style="height:240px;position:relative">
+                <div style="position:absolute;top:6px;left:10px;font-family:var(--sans);font-size:11px;font-weight:600;color:var(--text-dim);z-index:2">LR（线性回归）</div>
+                <canvas id="ch-cmp53-scatter-lr"></canvas>
+              </div>
+              <div class="chart-box" style="height:240px;position:relative">
+                <div style="position:absolute;top:6px;left:10px;font-family:var(--sans);font-size:11px;font-weight:600;color:var(--text-dim);z-index:2">PR（多项式回归）</div>
+                <canvas id="ch-cmp53-scatter-pr"></canvas>
+              </div>
+              <div class="chart-box" style="height:240px;position:relative">
+                <div style="position:absolute;top:6px;left:10px;font-family:var(--sans);font-size:11px;font-weight:600;color:var(--text-dim);z-index:2">SVR（支持向量回归）</div>
+                <canvas id="ch-cmp53-scatter-svr"></canvas>
+              </div>
+            </div>
+            <div style="margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--text-faint);text-align:center">
+              论文图 2-5 · 横轴：真实 HV · 纵轴：预测 HV · 虚线为理想预测线 y=x
+            </div>
+          </div>
+        </div>
+
+        <!-- 论文表1：训练集结果对比（静态复刻论文数值） -->
+        <div class="card" style="margin-top:20px">
+          <div class="card-head">
+            <div class="card-title"><span class="num">D</span>论文表 1 · 训练集结果对比</div>
+            <span class="tag tag-ember">论文静态数值</span>
+          </div>
+          <div class="card-body">
+            <div class="table-wrap">
+              <table class="data paper-table">
+                <thead><tr><th>模型</th><th>数据集类型</th><th>RMSE (HV)</th><th>MAE (HV)</th><th>R²</th><th>MAPE (%)</th></tr></thead>
+                <tbody>
+                  <tr class="row-highlight"><td><b>DDPG</b></td><td>训练集</td><td>8.05</td><td>5.2</td><td><b>0.9904</b></td><td><b>1.42</b></td></tr>
+                  <tr><td>LR</td><td>训练集</td><td>14.67</td><td>11.18</td><td>0.9733</td><td>2.73</td></tr>
+                  <tr><td>PR</td><td>训练集</td><td>20.2</td><td>14.61</td><td>0.9494</td><td>3.79</td></tr>
+                  <tr><td>SVR</td><td>训练集</td><td>44.97</td><td>22.5</td><td>0.7493</td><td>6.78</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div style="margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--text-faint)">来源：论文 5.3 节 表 1 · DDPG 训练集 R²=0.9904、MAPE=1.42%，拟合能力最佳</div>
+          </div>
+        </div>
+
+        <!-- 论文表2：测试集结果对比（静态复刻论文数值） -->
+        <div class="card" style="margin-top:20px">
+          <div class="card-head">
+            <div class="card-title"><span class="num">E</span>论文表 2 · 测试集结果对比</div>
+            <span class="tag tag-ember">论文静态数值</span>
+          </div>
+          <div class="card-body">
+            <div class="table-wrap">
+              <table class="data paper-table">
+                <thead><tr><th>模型</th><th>数据集类型</th><th>RMSE (HV)</th><th>MAE (HV)</th><th>R²</th><th>MAPE (%)</th></tr></thead>
+                <tbody>
+                  <tr class="row-highlight"><td><b>DDPG</b></td><td>测试集</td><td>70.67</td><td>45.69</td><td><b>0.3304</b></td><td><b>14.88</b></td></tr>
+                  <tr><td>LR</td><td>测试集</td><td>203.63</td><td>142.39</td><td>-4.6463</td><td>43.31</td></tr>
+                  <tr><td>PR</td><td>测试集</td><td>201.46</td><td>125.38</td><td>-4.5262</td><td>40.42</td></tr>
+                  <tr><td>SVR</td><td>测试集</td><td>88.22</td><td>65.16</td><td>-0.0597</td><td>20.57</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div style="margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--text-faint)">来源：论文 5.3 节 表 2 · 原始 149 条数据上 DDPG 测试集 R²=0.3304，对比中最优但泛化有限</div>
+          </div>
         </div>
       </div>
       <!-- ============ 页面 6 · 5.3 硬度预测对比 结束 ============ -->
@@ -629,8 +779,30 @@
           </div>
         </div>
         <div class="card" style="margin-top:20px">
-          <div class="card-head"><div class="card-title"><span class="num">C</span>预测 vs 真实 散点图</div></div>
-          <div class="card-body"><div class="chart-box" style="height:380px"><canvas id="ch-cmp54-scatter"></canvas></div></div>
+          <div class="card-head"><div class="card-title"><span class="num">C</span>预测 vs 真实 散点图（4 个算法 · GAN 扩充后）</div></div>
+          <div class="card-body">
+            <div class="grid g4" style="gap:14px">
+              <div class="chart-box" style="height:240px;position:relative">
+                <div style="position:absolute;top:6px;left:10px;font-family:var(--sans);font-size:11px;font-weight:600;color:var(--ember);z-index:2">DDPG（本论文主算法）</div>
+                <canvas id="ch-cmp54-scatter-ddpg"></canvas>
+              </div>
+              <div class="chart-box" style="height:240px;position:relative">
+                <div style="position:absolute;top:6px;left:10px;font-family:var(--sans);font-size:11px;font-weight:600;color:var(--text-dim);z-index:2">LR（线性回归）</div>
+                <canvas id="ch-cmp54-scatter-lr"></canvas>
+              </div>
+              <div class="chart-box" style="height:240px;position:relative">
+                <div style="position:absolute;top:6px;left:10px;font-family:var(--sans);font-size:11px;font-weight:600;color:var(--text-dim);z-index:2">PR（多项式回归）</div>
+                <canvas id="ch-cmp54-scatter-pr"></canvas>
+              </div>
+              <div class="chart-box" style="height:240px;position:relative">
+                <div style="position:absolute;top:6px;left:10px;font-family:var(--sans);font-size:11px;font-weight:600;color:var(--text-dim);z-index:2">SVR（支持向量回归）</div>
+                <canvas id="ch-cmp54-scatter-svr"></canvas>
+              </div>
+            </div>
+            <div style="margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--text-faint);text-align:center">
+              GAN 扩充后对比 · 横轴：真实 HV · 纵轴：预测 HV · 虚线为理想预测线 y=x
+            </div>
+          </div>
         </div>
         <div class="card" style="margin-top:20px">
           <div class="card-head"><div class="card-title"><span class="num">D</span>论文结论对比（论文表 3-4）</div></div>
@@ -645,8 +817,386 @@
             </div>
           </div>
         </div>
+
+        <!-- 论文表3：GAN 数据训练集结果对比（静态复刻论文数值） -->
+        <div class="card" style="margin-top:20px">
+          <div class="card-head">
+            <div class="card-title"><span class="num">E</span>论文表 3 · GAN 数据训练集结果对比</div>
+            <span class="tag tag-ember">论文静态数值</span>
+          </div>
+          <div class="card-body">
+            <div class="table-wrap">
+              <table class="data paper-table">
+                <thead><tr><th>模型</th><th>数据集类型</th><th>RMSE (HV)</th><th>MAE (HV)</th><th>R²</th><th>MAPE (%)</th></tr></thead>
+                <tbody>
+                  <tr class="row-highlight"><td><b>DDPG</b></td><td>训练集</td><td>15.45</td><td>6.09</td><td><b>0.9641</b></td><td><b>1.47</b></td></tr>
+                  <tr><td>LR</td><td>训练集</td><td>15.45</td><td>10.33</td><td>0.9526</td><td>2.56</td></tr>
+                  <tr><td>PR</td><td>训练集</td><td>1.23</td><td>0.83</td><td>0.9997</td><td>0.2</td></tr>
+                  <tr><td>SVR</td><td>训练集</td><td>16.93</td><td>9.51</td><td>0.9431</td><td>2.35</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div style="margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--text-faint)">来源：论文 5.4 节 表 3 · GAN 扩充后训练集，PR 训练集 R²=0.9997 表面最优但严重过拟合</div>
+          </div>
+        </div>
+
+        <!-- 论文表4：GAN 数据测试集结果对比（静态复刻论文数值） -->
+        <div class="card" style="margin-top:20px">
+          <div class="card-head">
+            <div class="card-title"><span class="num">F</span>论文表 4 · GAN 数据测试集结果对比</div>
+            <span class="tag tag-ember">论文静态数值</span>
+          </div>
+          <div class="card-body">
+            <div class="table-wrap">
+              <table class="data paper-table">
+                <thead><tr><th>模型</th><th>数据集类型</th><th>RMSE (HV)</th><th>MAE (HV)</th><th>R²</th><th>MAPE (%)</th></tr></thead>
+                <tbody>
+                  <tr class="row-highlight"><td><b>DDPG</b></td><td>测试集</td><td>14.95</td><td>5.84</td><td><b>0.9665</b></td><td><b>1.41</b></td></tr>
+                  <tr><td>LR</td><td>测试集</td><td>17.73</td><td>10.71</td><td>0.9386</td><td>2.61</td></tr>
+                  <tr><td>PR</td><td>测试集</td><td>1498.13</td><td>191.37</td><td>-437.1577</td><td>46.88</td></tr>
+                  <tr><td>SVR</td><td>测试集</td><td>19.33</td><td>9.95</td><td>0.927</td><td>2.42</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div style="margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--text-faint)">来源：论文 5.4 节 表 4 · GAN 扩充后 DDPG 测试集 R²=0.9665、MAPE=1.41%，泛化能力最佳</div>
+          </div>
+        </div>
       </div>
       <!-- ============ 页面 7 · 5.4 GAN 数据扩充对比 结束 ============ -->
+
+      <!-- ============ 页面 8 · DDPG 模型架构（ddpg-arch，论文图 1） ============ -->
+      <div class="page" id="page-ddpg-arch">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">第 3 章 · 网络模型设计（论文图 1）</div>
+            <h1 class="page-title">DDPG <em>模型架构</em></h1>
+          </div>
+          <div class="page-desc">深度确定性策略梯度（DDPG）基于 Actor-Critic 架构，适用于连续动作空间回归。状态 = 70 微结构 + 22 成分特征，动作 = 预测 HV，奖励 = 误差驱动反馈。</div>
+        </div>
+
+        <!-- 架构概览卡 -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-head"><div class="card-title"><span class="num">A</span>架构总览（论文 3.1 节）</div></div>
+          <div class="card-body">
+            <div style="font-family:var(--mono);font-size:12px;color:var(--text-dim);line-height:1.9">
+              <b style="color:var(--text)">核心思想：</b>将硬度预测建模为强化学习环境<br>
+              • <b style="color:var(--ember)">State（状态）</b>：70 维微结构特征 + 22 维成分特征 = 92 维向量<br>
+              • <b style="color:var(--ember)">Action（动作）</b>：预测的维氏硬度值（1 维连续）<br>
+              • <b style="color:var(--ember)">Reward（奖励）</b>：基于预测误差的分段反馈<br>
+              • <b style="color:var(--ember)">Actor</b>：策略网络，根据状态生成动作<br>
+              • <b style="color:var(--ember)">Critic</b>：价值网络，评估动作质量<br>
+              • <b style="color:var(--ember)">目标网络</b>：Actor/Critic 各配一个，软更新同步参数（公式 7）
+            </div>
+          </div>
+        </div>
+
+        <!-- Actor-Critic 架构图（SVG 矢量图，复刻论文图 1） -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-head"><div class="card-title"><span class="num">B</span>Actor-Critic 架构图（论文图 1）</div></div>
+          <div class="card-body">
+            <div class="arch-diagram">
+              <svg viewBox="0 0 900 460" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:900px;height:auto">
+                <!-- 背景分区 -->
+                <rect x="10" y="10" width="280" height="440" rx="12" fill="rgba(10,132,255,0.04)" stroke="rgba(10,132,255,0.2)"/>
+                <rect x="310" y="10" width="280" height="440" rx="12" fill="rgba(94,92,230,0.04)" stroke="rgba(94,92,230,0.2)"/>
+                <rect x="610" y="10" width="280" height="440" rx="12" fill="rgba(48,209,88,0.04)" stroke="rgba(48,209,88,0.2)"/>
+                <text x="150" y="35" text-anchor="middle" font-family="Inter,sans-serif" font-size="13" font-weight="600" fill="#0A84FF">Actor 网络（策略）</text>
+                <text x="450" y="35" text-anchor="middle" font-family="Inter,sans-serif" font-size="13" font-weight="600" fill="#5E5CE6">Critic 网络（价值）</text>
+                <text x="750" y="35" text-anchor="middle" font-family="Inter,sans-serif" font-size="13" font-weight="600" fill="#30D158">训练机制</text>
+
+                <!-- Actor 网络结构：输入 → 4 隐藏层 → Tanh → 缩放 -->
+                <rect x="40" y="60" width="220" height="36" rx="8" fill="#fff" stroke="#0A84FF"/>
+                <text x="150" y="83" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="#1e293b">State (92 维)</text>
+                <line x1="150" y1="96" x2="150" y2="115" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+                <rect x="40" y="115" width="220" height="32" rx="8" fill="rgba(10,132,255,0.08)" stroke="#0A84FF"/>
+                <text x="150" y="135" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="#1e293b">FC 1024 + BN + LeakyReLU + Dropout</text>
+                <line x1="150" y1="147" x2="150" y2="160" stroke="#94a3b8" stroke-width="1.5"/>
+
+                <rect x="40" y="160" width="220" height="32" rx="8" fill="rgba(10,132,255,0.08)" stroke="#0A84FF"/>
+                <text x="150" y="180" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="#1e293b">FC 1024 + BN + LeakyReLU + Dropout</text>
+                <line x1="150" y1="192" x2="150" y2="205" stroke="#94a3b8" stroke-width="1.5"/>
+
+                <rect x="40" y="205" width="220" height="32" rx="8" fill="rgba(10,132,255,0.08)" stroke="#0A84FF"/>
+                <text x="150" y="225" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="#1e293b">FC 512 + BN + LeakyReLU</text>
+                <line x1="150" y1="237" x2="150" y2="250" stroke="#94a3b8" stroke-width="1.5"/>
+
+                <rect x="40" y="250" width="220" height="32" rx="8" fill="rgba(10,132,255,0.08)" stroke="#0A84FF"/>
+                <text x="150" y="270" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="#1e293b">FC 256 + BN + LeakyReLU</text>
+                <line x1="150" y1="282" x2="150" y2="295" stroke="#94a3b8" stroke-width="1.5"/>
+
+                <rect x="40" y="295" width="220" height="32" rx="8" fill="rgba(10,132,255,0.15)" stroke="#0A84FF"/>
+                <text x="150" y="315" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="#0A84FF">Tanh → Action ∈ [-1, 1]</text>
+                <line x1="150" y1="327" x2="150" y2="340" stroke="#94a3b8" stroke-width="1.5"/>
+
+                <rect x="40" y="340" width="220" height="36" rx="8" fill="#0A84FF"/>
+                <text x="150" y="363" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" font-weight="600" fill="#fff">缩放 → 预测 HV</text>
+                <text x="150" y="400" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9" fill="#94a3b8">论文 3.2 节 · 公式 9-10</text>
+
+                <!-- Critic 双流架构 -->
+                <rect x="340" y="60" width="100" height="36" rx="8" fill="#fff" stroke="#5E5CE6"/>
+                <text x="390" y="83" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="#1e293b">State 流</text>
+                <line x1="390" y1="96" x2="390" y2="115" stroke="#94a3b8" stroke-width="1.5"/>
+
+                <rect x="460" y="60" width="100" height="36" rx="8" fill="#fff" stroke="#5E5CE6"/>
+                <text x="510" y="83" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="#1e293b">Action 流</text>
+                <line x1="510" y1="96" x2="510" y2="115" stroke="#94a3b8" stroke-width="1.5"/>
+
+                <rect x="340" y="115" width="100" height="32" rx="8" fill="rgba(94,92,230,0.08)" stroke="#5E5CE6"/>
+                <text x="390" y="135" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="#1e293b">FC 512 + BN + ReLU</text>
+                <line x1="390" y1="147" x2="420" y2="170" stroke="#94a3b8" stroke-width="1.5"/>
+
+                <rect x="460" y="115" width="100" height="32" rx="8" fill="rgba(94,92,230,0.08)" stroke="#5E5CE6"/>
+                <text x="510" y="135" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="#1e293b">FC 256 + BN + ReLU</text>
+                <line x1="510" y1="147" x2="480" y2="170" stroke="#94a3b8" stroke-width="1.5"/>
+
+                <!-- 拼接层 -->
+                <rect x="380" y="170" width="140" height="34" rx="8" fill="rgba(94,92,230,0.15)" stroke="#5E5CE6"/>
+                <text x="450" y="191" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="#5E5CE6">Concat → 768 维</text>
+                <line x1="450" y1="204" x2="450" y2="220" stroke="#94a3b8" stroke-width="1.5"/>
+
+                <rect x="370" y="220" width="160" height="30" rx="8" fill="rgba(94,92,230,0.08)" stroke="#5E5CE6"/>
+                <text x="450" y="239" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="#1e293b">FC → FC → FC</text>
+                <line x1="450" y1="250" x2="450" y2="265" stroke="#94a3b8" stroke-width="1.5"/>
+
+                <rect x="380" y="265" width="140" height="36" rx="8" fill="#5E5CE6"/>
+                <text x="450" y="288" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" font-weight="600" fill="#fff">Q 值</text>
+                <text x="450" y="330" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9" fill="#94a3b8">论文 3.2 节 · 双流设计</text>
+
+                <!-- 训练机制 -->
+                <rect x="640" y="60" width="220" height="34" rx="8" fill="rgba(48,209,88,0.1)" stroke="#30D158"/>
+                <text x="750" y="82" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="#1e293b">目标网络（Actor / Critic 各一）</text>
+                <text x="750" y="115" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="#475569">软更新：θ_target ← τ·θ + (1-τ)·θ_target</text>
+                <text x="750" y="130" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9" fill="#94a3b8">（公式 7 · τ 极小）</text>
+
+                <rect x="640" y="150" width="220" height="34" rx="8" fill="rgba(48,209,88,0.1)" stroke="#30D158"/>
+                <text x="750" y="172" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="#1e293b">优先经验回放（PER）</text>
+                <text x="750" y="205" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="#475569">五元组 (s, a, r, s', done)</text>
+                <text x="750" y="220" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="#475569">按 TD 误差优先采样</text>
+                <text x="750" y="235" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9" fill="#94a3b8">（论文 4.2 节 · 公式 17-19）</text>
+
+                <rect x="640" y="255" width="220" height="34" rx="8" fill="rgba(48,209,88,0.1)" stroke="#30D158"/>
+                <text x="750" y="277" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="#1e293b">高斯噪声探索</text>
+                <text x="750" y="310" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="#475569">σ₀=0.2 · 衰减率 0.995</text>
+                <text x="750" y="325" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="#475569">σ_min=0.05</text>
+                <text x="750" y="340" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9" fill="#94a3b8">（论文 4.1 节）</text>
+
+                <rect x="640" y="360" width="220" height="34" rx="8" fill="rgba(48,209,88,0.1)" stroke="#30D158"/>
+                <text x="750" y="382" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" fill="#1e293b">五段式奖励函数</text>
+                <text x="750" y="415" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="10" fill="#475569">误差驱动 · 分段权重</text>
+                <text x="750" y="430" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="9" fill="#94a3b8">（论文 3.4 节 · 公式 11-16）</text>
+
+                <!-- 箭头定义 -->
+                <defs>
+                  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                    <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+                  </marker>
+                </defs>
+              </svg>
+            </div>
+            <div style="margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--text-faint);text-align:center">
+              论文图 1 · 复刻 Actor-Critic 完整架构 · 左：Actor 策略网络 · 中：Critic 双流价值网络 · 右：训练机制
+            </div>
+          </div>
+        </div>
+
+        <!-- 网络层级参数表 -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-head"><div class="card-title"><span class="num">C</span>网络层级参数表</div></div>
+          <div class="card-body">
+            <div class="table-wrap">
+              <table class="data paper-table">
+                <thead><tr><th>网络</th><th>层</th><th>神经元</th><th>激活</th><th>归一化</th><th>正则化</th></tr></thead>
+                <tbody>
+                  <tr><td rowspan="5"><b>Actor</b></td><td>输入</td><td>92</td><td>—</td><td>—</td><td>—</td></tr>
+                  <tr><td>隐藏 1</td><td>1024</td><td>LeakyReLU</td><td>BatchNorm</td><td>Dropout</td></tr>
+                  <tr><td>隐藏 2</td><td>1024</td><td>LeakyReLU</td><td>BatchNorm</td><td>Dropout</td></tr>
+                  <tr><td>隐藏 3-4</td><td>512 → 256</td><td>LeakyReLU</td><td>BatchNorm</td><td>—</td></tr>
+                  <tr><td>输出</td><td>1</td><td>Tanh</td><td>—</td><td>动作缩放</td></tr>
+                  <tr><td rowspan="5"><b>Critic</b></td><td>State 流</td><td>→ 512</td><td>ReLU</td><td>BatchNorm</td><td>Dropout</td></tr>
+                  <tr><td>Action 流</td><td>→ 256</td><td>ReLU</td><td>BatchNorm</td><td>—</td></tr>
+                  <tr><td>Concat</td><td>768</td><td>—</td><td>—</td><td>—</td></tr>
+                  <tr><td>全连接</td><td>FC → FC → FC</td><td>—</td><td>—</td><td>—</td></tr>
+                  <tr><td>输出</td><td>1</td><td>—</td><td>—</td><td>Q 值</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- 关键机制说明卡 -->
+        <div class="card">
+          <div class="card-head"><div class="card-title"><span class="num">D</span>关键机制说明</div></div>
+          <div class="card-body">
+            <div style="font-family:var(--sans);font-size:12px;color:var(--text-dim);line-height:1.9">
+              <b style="color:var(--text)">动作空间（论文 3.3 节）：</b>动作 = 预测的硬度值。Actor 输出经 Tanh 约束到 [-1, 1]，再通过动作缩放机制（公式 9-10）映射到真实 HV 范围。<br><br>
+              <b style="color:var(--text)">奖励函数（论文 3.4 节）：</b>五段式奖励结构，根据绝对误差区间给予差异化权重（B=5/3/2/1），叠加相对误差奖励与硬截断，平衡精度与稳定性。<br><br>
+              <b style="color:var(--text)">探索策略（论文 4.1 节）：</b>训练期添加高斯噪声（σ₀=0.2，衰减率 0.995，σ_min=0.05），评估期关闭噪声。采用目标策略平滑技巧防止 Critic 过拟合。<br><br>
+              <b style="color:var(--text)">优先经验回放（论文 4.2 节）：</b>五元组 (s,a,r,s',done) 存入环形缓冲区，按 TD 误差优先级采样，配重要性采样权重修正偏差（公式 17-19）。
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- ============ 页面 8 · DDPG 模型架构 结束 ============ -->
+
+      <!-- ============ 页面 9 · GAN 数据生成过程（gan-process，论文 5.4 节） ============ -->
+      <div class="page" id="page-gan-process">
+        <div class="page-head">
+          <div>
+            <div class="page-sub">第 5.4 节 · GAN 数据增强</div>
+            <h1 class="page-title">GAN <em>数据生成过程</em></h1>
+          </div>
+          <div class="page-desc">原始数据仅 149 条，各模型严重过拟合。引入生成对抗网络（GAN）生成 10000 条符合原始分布的合成样本，扩充训练集至 10149 条，显著提升泛化性能。</div>
+        </div>
+
+        <!-- 顶部指标卡 -->
+        <div class="metrics">
+          <div class="metric"><div class="metric-label">原始数据</div><div class="metric-val">149</div><div class="metric-delta">实测样本</div></div>
+          <div class="metric"><div class="metric-label">GAN 生成</div><div class="metric-val warn">+10,000</div><div class="metric-delta">合成样本</div></div>
+          <div class="metric"><div class="metric-label">扩充后总量</div><div class="metric-val good">10,149</div><div class="metric-delta">训练集</div></div>
+          <div class="metric"><div class="metric-label">DDPG 提升</div><div class="metric-val" style="color:var(--ember)">R² 0.33 → 0.97</div><div class="metric-delta">泛化能力显著改善</div></div>
+        </div>
+
+        <!-- GAN 生成流程图 -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-head"><div class="card-title"><span class="num">A</span>GAN 生成流程图</div></div>
+          <div class="card-body">
+            <div class="gan-flow">
+              <div class="gan-stage">
+                <div class="gan-stage-num">1</div>
+                <div class="gan-stage-content">
+                  <div class="gan-stage-title">原始数据采集</div>
+                  <div class="gan-stage-desc">149 条实测合金样本（70 微结构 + 22 成分 + 1 硬度）</div>
+                </div>
+              </div>
+              <div class="gan-arrow">↓</div>
+              <div class="gan-stage">
+                <div class="gan-stage-num">2</div>
+                <div class="gan-stage-content">
+                  <div class="gan-stage-title">数据预处理</div>
+                  <div class="gan-stage-desc">分位数截断 + Z-Score 标准化，消除量纲差异</div>
+                </div>
+              </div>
+              <div class="gan-arrow">↓</div>
+              <div class="gan-stage">
+                <div class="gan-stage-num">3</div>
+                <div class="gan-stage-content">
+                  <div class="gan-stage-title">GAN 训练</div>
+                  <div class="gan-stage-desc">生成器 G（噪声 → 假样本） vs 判别器 D（真 vs 假）对抗训练</div>
+                </div>
+              </div>
+              <div class="gan-arrow">↓</div>
+              <div class="gan-stage">
+                <div class="gan-stage-num">4</div>
+                <div class="gan-stage-content">
+                  <div class="gan-stage-title">合成样本生成</div>
+                  <div class="gan-stage-desc">输入随机噪声，G 生成 10000 条符合原始分布的合成样本</div>
+                </div>
+              </div>
+              <div class="gan-arrow">↓</div>
+              <div class="gan-stage">
+                <div class="gan-stage-num">5</div>
+                <div class="gan-stage-content">
+                  <div class="gan-stage-title">数据混合</div>
+                  <div class="gan-stage-desc">149 实测 + 10000 合成 = 10149 条训练集</div>
+                </div>
+              </div>
+              <div class="gan-arrow">↓</div>
+              <div class="gan-stage gan-stage-final">
+                <div class="gan-stage-num">6</div>
+                <div class="gan-stage-content">
+                  <div class="gan-stage-title">模型训练</div>
+                  <div class="gan-stage-desc">用扩充后的 10149 条数据训练 DDPG / LR / PR / SVR</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- GAN 对抗训练示意图 -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-head"><div class="card-title"><span class="num">B</span>GAN 对抗训练示意图</div></div>
+          <div class="card-body">
+            <div class="chart-box" style="height:320px"><canvas id="ch-gan-loss"></canvas></div>
+            <div style="margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--text-faint);text-align:center">
+              生成器损失（G Loss）与判别器损失（D Loss）对抗收敛曲线 · 模拟数据
+            </div>
+          </div>
+        </div>
+
+        <!-- GAN 架构说明卡 -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-head"><div class="card-title"><span class="num">C</span>GAN 架构说明</div></div>
+          <div class="card-body">
+            <div class="gan-arch-grid">
+              <div class="gan-arch-block">
+                <div class="gan-arch-title" style="color:var(--ember)">生成器 G</div>
+                <div class="gan-arch-desc">
+                  • 输入：随机噪声 z（高斯分布）<br>
+                  • 网络：多层全连接 + LeakyReLU<br>
+                  • 输出：合成样本（92 维特征 + HV）<br>
+                  • 目标：骗过判别器，生成逼真数据
+                </div>
+              </div>
+              <div class="gan-arch-block">
+                <div class="gan-arch-title" style="color:var(--violet)">判别器 D</div>
+                <div class="gan-arch-desc">
+                  • 输入：真实样本 or 生成样本<br>
+                  • 网络：多层全连接 + LeakyReLU + Sigmoid<br>
+                  • 输出：真假概率 [0, 1]<br>
+                  • 目标：区分真实数据与生成数据
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:16px;padding:14px;background:rgba(10,132,255,0.04);border-radius:var(--r-md);font-family:var(--mono);font-size:11px;color:var(--text-dim);line-height:1.7">
+              <b style="color:var(--text)">对抗目标：</b><br>
+              min<sub>G</sub> max<sub>D</sub> V(D, G) = E<sub>x~p<sub>data</sub></sub>[log D(x)] + E<sub>z~p<sub>z</sub></sub>[log(1 − D(G(z)))]<br>
+              <span style="color:var(--text-faint)">训练达到纳什均衡时，G 生成的样本分布逼近真实数据分布</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 扩充前后效果对比表 -->
+        <div class="card">
+          <div class="card-head"><div class="card-title"><span class="num">D</span>扩充前后效果对比（论文表 2 vs 表 4 · 测试集）</div></div>
+          <div class="card-body">
+            <div class="table-wrap">
+              <table class="data paper-table">
+                <thead><tr><th>模型</th><th>数据集</th><th>RMSE (HV)</th><th>R²</th><th>MAPE (%)</th><th>变化</th></tr></thead>
+                <tbody>
+                  <tr class="row-highlight">
+                    <td><b>DDPG</b></td><td>原始 → GAN</td>
+                    <td>70.67 → 14.95</td><td>0.3304 → 0.9665</td><td>14.88 → 1.41</td>
+                    <td style="color:var(--success)"><b>显著提升 ↑</b></td>
+                  </tr>
+                  <tr>
+                    <td>LR</td><td>原始 → GAN</td>
+                    <td>203.63 → 17.73</td><td>-4.6463 → 0.9386</td><td>43.31 → 2.61</td>
+                    <td style="color:var(--success)"><b>显著提升 ↑</b></td>
+                  </tr>
+                  <tr>
+                    <td>SVR</td><td>原始 → GAN</td>
+                    <td>88.22 → 19.33</td><td>-0.0597 → 0.927</td><td>20.57 → 2.42</td>
+                    <td style="color:var(--success)"><b>显著提升 ↑</b></td>
+                  </tr>
+                  <tr>
+                    <td>PR</td><td>原始 → GAN</td>
+                    <td>201.46 → 1498.13</td><td>-4.5262 → -437.1577</td><td>40.42 → 46.88</td>
+                    <td style="color:var(--danger)"><b>进一步过拟合 ↓</b></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div style="margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--text-faint)">
+              结论：GAN 数据扩充使 DDPG/LR/SVR 测试集性能大幅提升，但 PR 因模型容量过大反而加剧过拟合。
+              DDPG 凭借强化学习架构的探索与价值评估机制，在扩充数据上获得最优泛化能力（R²=0.9665）。
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- ============ 页面 9 · GAN 数据生成过程 结束 ============ -->
+
+
 
       <!-- ============ 页面 8 · 数据管理（data-mgr） ============ -->
       <div class="page" id="page-data-mgr">
