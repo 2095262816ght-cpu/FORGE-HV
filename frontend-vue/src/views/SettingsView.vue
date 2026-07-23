@@ -59,7 +59,7 @@ const auth = useAuthStore()
 const loading = ref(false)
 const saving = ref(false)
 const form = reactive({
-  site_title: 'FORGE-HV',
+  site_title: '合金维氏硬度预测',
   default_data_source: 'real',
   allow_guest_browse: 'true',
   allow_register: 'true',

@@ -33,7 +33,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FORGE · 高温合金机器学习实验台</title>
+<title>合金维氏硬度预测</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..700&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -48,47 +48,38 @@
   <aside class="sidebar">
     <!-- 品牌区 -->
     <div class="brand">
-      <div class="brand-mark"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;margin-right:8px"><rect x="3" y="3" width="18" height="18" rx="5" fill="url(#fg1)" opacity=".9"/><path d="M8 12.5L11 15.5L16.5 9" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="fg1" x1="3" y1="3" x2="21" y2="21"><stop stop-color="#0A84FF"/><stop offset="1" stop-color="#5E5CE6"/></linearGradient></defs></svg>FORGE</div>
-      <div class="brand-sub">Superalloy ML Bench</div>
-      <div class="brand-meta"><span class="dot"></span><span>v3.1 · 论文对齐版</span></div>
+      <div class="brand-mark"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;margin-right:8px"><rect x="3" y="3" width="18" height="18" rx="5" fill="url(#fg1)" opacity=".9"/><path d="M8 12.5L11 15.5L16.5 9" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="fg1" x1="3" y1="3" x2="21" y2="21"><stop stop-color="#0A84FF"/><stop offset="1" stop-color="#5E5CE6"/></linearGradient></defs></svg>合金维氏硬度预测</div>
+      <div class="brand-sub">DDPG · LR / PR / SVR</div>
+      <div class="brand-meta"><span class="dot"></span><span>FORGE-HV</span></div>
     </div>
 
     <!-- 折叠按钮 -->
     <div class="sidebar-toggle" id="sidebar-toggle" title="折叠/展开侧边栏">⟨</div>
 
-    <!-- 主导航：4 组 7 个页面，按论文章节顺序 -->
+    <!-- 主导航：论文核心页面（无章节号） -->
     <nav class="nav" id="nav">
-      <!-- 组 1：数据准备（第 2 章） -->
       <div class="nav-group">
-        <div class="nav-cat">数据准备 · 第 2 章 <span class="arrow">▼</span></div>
+        <div class="nav-cat">数据准备 <span class="arrow">▼</span></div>
         <div class="nav-item active" data-page="dashboard"><span class="ic">◉</span>数据可视化</div>
         <div class="nav-item" data-page="outliers"><span class="ic">⊙</span>异常值检测</div>
         <div class="nav-item" data-page="correlation"><span class="ic">⌬</span>元素相关性</div>
-        <div class="nav-item" data-page="database"><span class="ic">▤</span>数据库管理</div>
       </div>
 
-      <!-- 组 2：DDPG 模型训练（第 3-4 章） -->
       <div class="nav-group">
-        <div class="nav-cat">DDPG 模型 · 第 3-4 章 <span class="arrow">▼</span></div>
-        <div class="nav-item" data-page="ddpg"><span class="ic">⚡</span>DDPG 训练</div>
+        <div class="nav-cat">DDPG 模型 <span class="arrow">▼</span></div>
         <div class="nav-item" data-page="ddpg-arch"><span class="ic">⌬</span>DDPG 模型架构</div>
-        <div class="nav-item" data-page="gan-process"><span class="ic">⊞</span>GAN 数据生成过程</div>
+        <div class="nav-item" data-page="ddpg"><span class="ic">⚡</span>DDPG 训练</div>
       </div>
 
-      <!-- 组 3：实验对比（第 5.3 / 5.4 节） -->
       <div class="nav-group">
-        <div class="nav-cat">实验对比 · 第 5 章 <span class="arrow">▼</span></div>
-        <div class="nav-item" data-page="cmp53"><span class="ic">◆</span>5.3 硬度预测对比</div>
-        <div class="nav-item" data-page="cmp54"><span class="ic">▦</span>5.4 GAN 数据扩充对比</div>
+        <div class="nav-cat">数据扩充 <span class="arrow">▼</span></div>
+        <div class="nav-item" data-page="gan-process"><span class="ic">⊞</span>数据扩充过程</div>
       </div>
 
-      <!-- 组 4：系统管理 -->
       <div class="nav-group">
-        <div class="nav-cat">系统管理 <span class="arrow">▼</span></div>
-        <div class="nav-item" data-page="data-mgr"><span class="ic">⊟</span>数据管理</div>
-        <div class="nav-item" data-page="history"><span class="ic">⌚</span>历史记录</div>
-        <div class="nav-item" data-page="users"><span class="ic">♛</span>用户管理</div>
-        <div class="nav-item" data-page="settings"><span class="ic">⚙</span>系统设置</div>
+        <div class="nav-cat">实验对比 <span class="arrow">▼</span></div>
+        <div class="nav-item" data-page="cmp53"><span class="ic">◆</span>材料硬度预测比较</div>
+        <div class="nav-item" data-page="cmp54"><span class="ic">▦</span>数据扩充比较</div>
       </div>
     </nav>
 
@@ -104,7 +95,7 @@
   <main class="main">
     <header class="topbar">
       <div class="crumb">
-        <span>FORGE</span><span class="sep">/</span>
+        <span>合金维氏硬度预测</span><span class="sep">/</span>
         <span id="crumb-cat">数据准备</span><span class="sep">/</span>
         <b id="crumb-page">数据可视化</b>
       </div>
@@ -133,7 +124,7 @@
       <div class="page active" id="page-dashboard">
         <div class="page-head">
           <div>
-            <div class="page-sub">第 2 章 · 数据准备与预处理</div>
+            <div class="page-sub">数据准备与预处理</div>
             <h1 class="page-title">数据 <em>可视化</em></h1>
           </div>
           <div class="page-desc">高温合金数据集：149 条实测样本，每条 = 70 维 DINO-v2 微结构特征 + 22 维成分特征 + 1 维维氏硬度 HV。支持导入 Excel/CSV 数据文件。</div>
@@ -288,7 +279,7 @@
       <div class="page" id="page-outliers">
         <div class="page-head">
           <div>
-            <div class="page-sub">第 2 章 · 公式 (1)(2)(3)</div>
+            <div class="page-sub">异常值分位数截断</div>
             <div class="page-title">异常值<em>检测</em></div>
             <div class="page-desc">论文 2 章分位数截断策略（保留 1%~99% 分位数范围内数据），消除极端异常值对模型训练的干扰。另支持 IsolationForest / IQR / Z-score。</div>
           </div>
@@ -358,7 +349,7 @@
       <div class="page" id="page-correlation">
         <div class="page-head">
           <div>
-            <div class="page-sub">第 2 章 · 22 种元素成分关系</div>
+            <div class="page-sub">22 种元素成分关系</div>
             <div class="page-title">元素<em>相关性</em></div>
             <div class="page-desc">22 种合金元素成分（Al/W/Ta/Ti/Cr 等）间的相关性矩阵。Pearson / Spearman / Kendall 三种方法，自动列出 |r|≥0.7 的高耦合元素对。</div>
           </div>
@@ -490,7 +481,7 @@
       <div class="page" id="page-ddpg">
         <div class="page-head">
           <div>
-            <div class="page-sub">第 3-4 章 · 网络模型设计与训练策略</div>
+            <div class="page-sub">网络模型设计与训练策略</div>
             <div class="page-title">DDPG <em>模型训练</em></div>
             <div class="page-desc">深度确定性策略梯度（DDPG）回归框架：Actor-Critic 网络 + 优先经验回放 + 五段式奖励函数 + 高斯噪声探索。对应论文 3-4 章。</div>
           </div>
@@ -587,8 +578,8 @@
       <div class="page" id="page-cmp53">
         <div class="page-head">
           <div>
-            <div class="page-sub">第 5.3 节 · 材料维氏硬度预测比较（原始数据）</div>
-            <h1 class="page-title">5.3 <em>硬度预测对比</em></h1>
+            <div class="page-sub">材料维氏硬度预测比较（原始 149 条数据）</div>
+            <h1 class="page-title">材料硬度<em>预测比较</em></h1>
           </div>
           <div class="page-desc">原始 149 条实测数据上，DDPG vs LR vs PR vs SVR 四种算法对比（论文表 1-2）。评估指标：RMSE / MAE / R² / MAPE（论文 5.2 节）。</div>
         </div>
@@ -630,7 +621,7 @@
               </div>
               <div style="margin-top:6px;font-family:var(--mono);font-size:10px;color:var(--text-faint)">注：DDPG 在前端直接调用 /api/ddpg/train（real 数据源），训练耗时较长</div>
             </div>
-            <button class="btn btn-primary" id="cmp53-run">▶ 运行 5.3 节对比实验</button>
+            <button class="btn btn-primary" id="cmp53-run">▶ 运行对比实验</button>
           </div>
         </div>
         <div class="card" style="margin-top:20px">
@@ -639,7 +630,7 @@
             <div class="table-wrap" style="max-height:460px">
               <table class="data" id="cmp53-table">
                 <thead><tr><th>模型</th><th>数据集</th><th>RMSE (HV)</th><th>MAE (HV)</th><th>R²</th><th>MAPE (%)</th></tr></thead>
-                <tbody><tr><td colspan="6" style="text-align:center;color:var(--text-faint);padding:24px">点击"运行 5.3 节对比实验"开始</td></tr></tbody>
+                <tbody><tr><td colspan="6" style="text-align:center;color:var(--text-faint);padding:24px">点击「运行对比实验」开始</td></tr></tbody>
               </table>
             </div>
           </div>
@@ -722,8 +713,8 @@
       <div class="page" id="page-cmp54">
         <div class="page-head">
           <div>
-            <div class="page-sub">第 5.4 节 · 数据扩充对算法性能影响分析</div>
-            <h1 class="page-title">5.4 <em>GAN 数据扩充对比</em></h1>
+            <div class="page-sub">数据扩充对算法性能影响分析</div>
+            <h1 class="page-title">数据扩充<em>比较</em></h1>
           </div>
           <div class="page-desc">GAN 扩充后 10149 条数据上，DDPG vs LR vs PR vs SVR 四种算法对比（论文表 3-4）。论文结论：DDPG 测试集 R²=0.9665、MAPE=1.41%。</div>
         </div>
@@ -764,7 +755,7 @@
                 <span class="chip on" data-model="DDPG" data-ddpg="1">DDPG（本论文主算法）</span>
               </div>
             </div>
-            <button class="btn btn-primary" id="cmp54-run">▶ 运行 5.4 节对比实验</button>
+            <button class="btn btn-primary" id="cmp54-run">▶ 运行对比实验</button>
           </div>
         </div>
         <div class="card" style="margin-top:20px">
@@ -773,7 +764,7 @@
             <div class="table-wrap" style="max-height:460px">
               <table class="data" id="cmp54-table">
                 <thead><tr><th>模型</th><th>数据集</th><th>RMSE (HV)</th><th>MAE (HV)</th><th>R²</th><th>MAPE (%)</th></tr></thead>
-                <tbody><tr><td colspan="6" style="text-align:center;color:var(--text-faint);padding:24px">点击"运行 5.4 节对比实验"开始</td></tr></tbody>
+                <tbody><tr><td colspan="6" style="text-align:center;color:var(--text-faint);padding:24px">点击「运行对比实验」开始</td></tr></tbody>
               </table>
             </div>
           </div>
@@ -868,7 +859,7 @@
       <div class="page" id="page-ddpg-arch">
         <div class="page-head">
           <div>
-            <div class="page-sub">第 3 章 · 网络模型设计（论文图 1）</div>
+            <div class="page-sub">网络模型设计</div>
             <h1 class="page-title">DDPG <em>模型架构</em></h1>
           </div>
           <div class="page-desc">深度确定性策略梯度（DDPG）基于 Actor-Critic 架构，适用于连续动作空间回归。状态 = 70 微结构 + 22 成分特征，动作 = 预测 HV，奖励 = 误差驱动反馈。</div>
@@ -1043,7 +1034,7 @@
       <div class="page" id="page-gan-process">
         <div class="page-head">
           <div>
-            <div class="page-sub">第 5.4 节 · GAN 数据增强</div>
+            <div class="page-sub">GAN 数据增强 · 扩充过程</div>
             <h1 class="page-title">GAN <em>数据生成过程</em></h1>
           </div>
           <div class="page-desc">原始数据仅 149 条，各模型严重过拟合。引入生成对抗网络（GAN）生成 10000 条符合原始分布的合成样本，扩充训练集至 10149 条，显著提升泛化性能。</div>

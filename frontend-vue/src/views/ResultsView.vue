@@ -4,7 +4,7 @@
       sub="实验记录 · 本地持久化"
       title="训练"
       em="结果记录"
-      desc="保存 DDPG 训练与 5.3 / 5.4 对比实验的最近结果。切换页面或刷新浏览器后仍可回看；数据保存在本机浏览器中。"
+      desc="保存 DDPG 训练与硬度预测比较 / 数据扩充比较的最近结果。切换页面或刷新浏览器后仍可回看；数据保存在本机浏览器中。"
     />
 
     <div class="page-card">
@@ -12,7 +12,7 @@
         <el-button type="danger" plain :disabled="!history.length" @click="clearAll">清空全部记录</el-button>
         <span class="tag-pill">共 {{ history.length }} 条</span>
       </div>
-      <el-table :data="history" stripe border size="small" empty-text="暂无训练记录，去 DDPG / 5.3 / 5.4 页面跑一次实验即可自动保存">
+      <el-table :data="history" stripe border size="small" empty-text="暂无训练记录，去 DDPG / 材料硬度预测比较 / 数据扩充比较 页面跑一次实验即可自动保存">
         <el-table-column prop="savedAt" label="时间" width="170">
           <template #default="{ row }">{{ formatTime(row.savedAt) }}</template>
         </el-table-column>

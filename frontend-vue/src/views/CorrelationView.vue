@@ -1,7 +1,7 @@
 <template>
   <div>
     <PageHeader
-      sub="第 2 章 · 22 种元素成分关系"
+      sub="22 种元素成分关系"
       title="元素"
       em="相关性"
       desc="22 种合金元素成分（Al/W/Ta/Ti/Cr 等）间的相关性矩阵。Pearson / Spearman / Kendall 三种方法，自动列出 |r|≥0.7 的高耦合元素对。"

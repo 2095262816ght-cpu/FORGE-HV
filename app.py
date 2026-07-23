@@ -121,6 +121,146 @@ else:
 # 目标变量列名：维氏硬度 HV
 TARGET_COL = "Vickers Hardness (HV)"
 
+# 常见硬度列别名（中英 / 带单位 / 大小写差异）
+_TARGET_ALIASES = {
+    "vickers hardness (hv)",
+    "vickers hardness(hv)",
+    "vickers hardness",
+    "vickers_hardness",
+    "hardness (hv)",
+    "hardness(hv)",
+    "hardness_hv",
+    "hardness",
+    "hv",
+    "hv_value",
+    "target",
+    "y",
+    "label",
+    "维氏硬度",
+    "维氏硬度(hv)",
+    "维氏硬度（hv）",
+    "维氏硬度 hv",
+    "硬度",
+    "硬度值",
+    "硬度(hv)",
+    "硬度（hv）",
+    "目标",
+    "目标值",
+}
+
+# GPa 单位硬度列（可换算为 HV：1 GPa ≈ 102 HV）
+_GPA_ALIASES = {
+    "vickers hardness (gpa)",
+    "vickers hardness(gpa)",
+    "vickers hardness (gpa) ",
+    "hardness (gpa)",
+    "hardness(gpa)",
+    "hardness_gpa",
+    "gpa",
+    "维氏硬度(gpa)",
+    "维氏硬度（gpa）",
+    "硬度(gpa)",
+    "硬度（gpa）",
+}
+
+
+def _norm_col_key(name: str) -> str:
+    """列名规范化：去空白、统一括号、小写。"""
+    s = str(name).strip().lower().replace("（", "(").replace("）", ")")
+    s = " ".join(s.split())
+    return s
+
+
+def _find_target_column(columns):
+    """在列名中定位硬度目标列（HV）；找不到返回 None。"""
+    cols = list(columns)
+    exact = {str(c).strip(): c for c in cols}
+    if TARGET_COL in exact:
+        return exact[TARGET_COL]
+    keyed = {_norm_col_key(c): c for c in cols}
+    for alias in _TARGET_ALIASES:
+        if alias in keyed:
+            return keyed[alias]
+    # 模糊：含 hardness / hv / 硬度 / 维氏（优先 HV，跳过纯 GPa）
+    candidates = []
+    for c in cols:
+        key = _norm_col_key(c)
+        if "image" in key or "name" in key or "gpa" in key:
+            continue
+        if (
+            "hardness" in key
+            or key == "hv"
+            or key.endswith(" hv")
+            or "(hv)" in key
+            or "硬度" in str(c)
+            or "维氏" in str(c)
+        ):
+            candidates.append(c)
+    if candidates:
+        # 优先列名含 HV
+        for c in candidates:
+            if "hv" in _norm_col_key(c):
+                return c
+        return candidates[0]
+    return None
+
+
+def _find_gpa_column(columns):
+    """定位 GPa 单位硬度列。"""
+    keyed = {_norm_col_key(c): c for c in columns}
+    for alias in _GPA_ALIASES:
+        if alias in keyed:
+            return keyed[alias]
+    for c in columns:
+        key = _norm_col_key(c)
+        if "gpa" in key and ("hard" in key or "硬度" in str(c) or "维氏" in str(c) or key == "gpa"):
+            return c
+    return None
+
+
+def _ensure_target_column(df: pd.DataFrame) -> pd.DataFrame:
+    """保证 DataFrame 含标准目标列名 TARGET_COL；必要时重命名 / 从 GPa 换算。"""
+    out = df.copy()
+    out.columns = [str(c).strip() for c in out.columns]
+    if TARGET_COL in out.columns:
+        return out
+
+    found = _find_target_column(out.columns)
+    if found is not None:
+        if found != TARGET_COL:
+            out = out.rename(columns={found: TARGET_COL})
+        return out
+
+    # 仅有 GPa 列时：换算为 HV（与 run_all 一致，×102）
+    gpa_col = _find_gpa_column(out.columns)
+    if gpa_col is not None:
+        out[TARGET_COL] = pd.to_numeric(out[gpa_col], errors="coerce") * 102.0
+        out = out.drop(columns=[gpa_col], errors="ignore")
+        return out
+
+    # 结构兜底：最后一列数值、且样本结构接近 22+70+1
+    last = out.columns[-1] if len(out.columns) else None
+    if last is not None and last != TARGET_COL:
+        series = pd.to_numeric(out[last], errors="coerce")
+        if series.notna().sum() >= max(1, int(len(out) * 0.5)):
+            out = out.rename(columns={last: TARGET_COL})
+            return out
+
+    raise ValueError(
+        f"文件缺少目标列 '{TARGET_COL}'（也可使用：硬度 / 维氏硬度 / HV / Hardness / GPa）"
+    )
+
+
+def _read_dataframe(path: str) -> pd.DataFrame:
+    """按扩展名读取 Excel/CSV，并规范化硬度列名。"""
+    low = str(path).lower()
+    if low.endswith(".csv"):
+        df = pd.read_csv(path)
+    else:
+        df = pd.read_excel(path)
+    return _ensure_target_column(df)
+
+
 # 训练结果缓存（最后一次训练的模型和预测数据，用于导出）
 _LAST_TRAIN_CACHE = {
     "model": None, "model_name": None, "X_test": None, "y_test": None,
@@ -184,13 +324,13 @@ def load_training_data(source: str = "real", gan_weight: float = 0.2):
     if source == "gan":
         # 优先使用合并后的 GAN 数据
         if os.path.exists(config.COMBINED_DATA_PATH):
-            df = pd.read_excel(config.COMBINED_DATA_PATH)
+            df = _read_dataframe(config.COMBINED_DATA_PATH)
         else:
-            df = load_and_filter_gan_data()
+            df = _ensure_target_column(load_and_filter_gan_data())
         return df, None
     if source == "gan_train_real_test" and os.path.exists(config.COMBINED_DATA_PATH):
         # 实测样本 weight=-1（测试集），GAN 样本 weight=0.2（训练集降权）
-        df = pd.read_excel(config.COMBINED_DATA_PATH)
+        df = _read_dataframe(config.COMBINED_DATA_PATH)
         s = df[config.composition_columns].sum(axis=1)
         df = df[(s >= 85) & (s <= 115)].copy()
         # 标记样本权重：来源列若存在则按来源区分
@@ -200,8 +340,8 @@ def load_training_data(source: str = "real", gan_weight: float = 0.2):
             # 无 Source 列时退化为统一权重
             sw = np.full(len(df), gan_weight)
         return df, sw
-    # 默认：实测数据
-    df = pd.read_excel(path)
+    # 默认：实测数据（支持上传的 csv / xlsx）
+    df = _read_dataframe(path)
     return df, None
 
 
@@ -503,7 +643,7 @@ def health():
 def data_columns():
     """返回数据表的列结构"""
     try:
-        df = pd.read_excel(_current_data_path())
+        df = _read_dataframe(_current_data_path())
         return jsonify({
             "composition": config.composition_columns,
             "target": TARGET_COL,
@@ -525,10 +665,7 @@ def data_preview():
         n = int(request.args.get("n", request.args.get("limit", 20)))
         n = max(1, min(n, 500))
         path = _current_data_path()
-        if str(path).lower().endswith(".csv"):
-            df = pd.read_csv(path)
-        else:
-            df = pd.read_excel(path)
+        df = _read_dataframe(path)
         # 优先展示：成分 + HV；微结构列一并保留在 all 预览中
         want_cols = ["Image_Name"] + config.composition_columns + [TARGET_COL]
         micro_cols = [c for c in df.columns if c not in want_cols]
@@ -569,10 +706,7 @@ def data_stats():
     """统计摘要：样本数、元素分布、HV 直方图等（供数据可视化页）"""
     try:
         path = _current_data_path()
-        if str(path).lower().endswith(".csv"):
-            df = pd.read_csv(path)
-        else:
-            df = pd.read_excel(path)
+        df = _read_dataframe(path)
         y = df[TARGET_COL].dropna() if TARGET_COL in df.columns else pd.Series(dtype=float)
 
         # 22 种元素含量统计
@@ -649,25 +783,29 @@ def data_upload():
         save_path = os.path.join(config.BASE_DIR, "generated_data", f"uploaded_data{ext}")
         f.save(save_path)
 
-        # 校验文件可读 + 包含必要列
+        # 校验文件可读 + 规范化硬度目标列
         try:
             if ext == ".csv":
                 df = pd.read_csv(save_path)
             else:
                 df = pd.read_excel(save_path)
+            df = _ensure_target_column(df)
+        except ValueError as e:
+            os.remove(save_path)
+            return jsonify({"error": str(e)}), 400
         except Exception as e:
             os.remove(save_path)
             return jsonify({"error": f"文件解析失败：{e}"}), 400
 
-        # 检查目标列是否存在
-        if TARGET_COL not in df.columns:
-            # 尝试模糊匹配
-            target_candidates = [c for c in df.columns if "hardness" in c.lower() or "hv" in c.lower()]
-            if not target_candidates:
-                os.remove(save_path)
-                return jsonify({
-                    "error": f"文件缺少目标列 '{TARGET_COL}'（或含 hardness/HV 的列）"
-                }), 400
+        # 写回规范化后的表（列名统一为 Vickers Hardness (HV)）
+        try:
+            if ext == ".csv":
+                df.to_csv(save_path, index=False, encoding="utf-8-sig")
+            else:
+                df.to_excel(save_path, index=False)
+        except Exception as e:
+            os.remove(save_path)
+            return jsonify({"error": f"规范化保存失败：{e}"}), 400
 
         # 切换数据源并持久化（刷新 / 重启 ML 后仍可恢复）
         _UPLOADED_DATA_PATH["path"] = save_path
@@ -680,6 +818,7 @@ def data_upload():
             "n_samples": int(len(df)),
             "n_cols": int(len(df.columns)),
             "columns": list(df.columns)[:30],
+            "target_col": TARGET_COL,
         })
     except Exception as e:
         traceback.print_exc()
@@ -701,7 +840,7 @@ def data_reset():
 @app.route("/api/train/traditional", methods=["POST"])
 @login_required()
 def train_traditional():
-    """传统回归模型训练（论文 5.1 节对比算法之一）
+    """传统回归模型训练（论文对比算法之一）
 
     请求体 JSON 字段：
       model           : str  算法名（LinearRegression / PolynomialRegression / SVR）
@@ -792,13 +931,15 @@ def train_traditional():
 @app.route("/api/train/compare", methods=["POST"])
 @login_required()
 def train_compare():
-    """多模型横向对比：在统一数据划分上跑 LR / PR / SVR + K 折交叉验证
+    """多模型横向对比：在统一数据划分上跑 LR / PR / SVR
 
     请求体 JSON 字段：
       models    : list[str] 算法名列表（默认 ['LinearRegression','PolynomialRegression','SVR']）
       test_size : float 测试集比例
-      cv_folds  : int   交叉验证折数
+      cv_folds  : int   交叉验证折数（可选，不影响表内主指标）
       data_source : str 数据源 real / gan / gan_train_real_test
+
+    返回每个模型的训练集与测试集指标（RMSE / MAE / R² / MAPE），与论文表结构一致。
     """
     try:
         req = request.get_json() or {}
@@ -828,23 +969,43 @@ def train_compare():
             try:
                 m = build_model(name)
                 m.fit(X_train, y_train)
-                y_pred = m.predict(X_test)
-                mt = calculate_metrics(y_test, y_pred, "测试集")
-                # K 折交叉验证
+                y_train_pred = m.predict(X_train)
+                y_test_pred = m.predict(X_test)
+                mt_train = calculate_metrics(y_train, y_train_pred, "训练集")
+                mt_test = calculate_metrics(y_test, y_test_pred, "测试集")
+                # K 折交叉验证（辅助，不作为主表指标）
                 cv_scores = cross_val_score(
                     build_model(name), X_train, y_train,
                     cv=cv_folds, scoring="r2", n_jobs=-1,
                 )
                 scatter = [
-                    {"x": safe_float(y_test[i]), "y": safe_float(y_pred[i])}
+                    {"x": safe_float(y_test[i]), "y": safe_float(y_test_pred[i])}
                     for i in range(len(y_test))
                 ]
                 results.append({
                     "model": name,
-                    "r2": safe_float(mt["R2_value"]),
-                    "rmse": safe_float(mt["RMSE_value"]),
-                    "mae": safe_float(mt["MAE_value"]),
-                    "mape": safe_float(mt["MAPE_value"]),
+                    # 兼容旧前端：顶层字段 = 测试集
+                    "r2": safe_float(mt_test["R2_value"]),
+                    "rmse": safe_float(mt_test["RMSE_value"]),
+                    "mae": safe_float(mt_test["MAE_value"]),
+                    "mape": safe_float(mt_test["MAPE_value"]),
+                    # 顶层训练集字段，避免代理/前端漏读嵌套 train_metrics
+                    "train_r2": safe_float(mt_train["R2_value"]),
+                    "train_rmse": safe_float(mt_train["RMSE_value"]),
+                    "train_mae": safe_float(mt_train["MAE_value"]),
+                    "train_mape": safe_float(mt_train["MAPE_value"]),
+                    "train_metrics": {
+                        "r2": safe_float(mt_train["R2_value"]),
+                        "rmse": safe_float(mt_train["RMSE_value"]),
+                        "mae": safe_float(mt_train["MAE_value"]),
+                        "mape": safe_float(mt_train["MAPE_value"]),
+                    },
+                    "test_metrics": {
+                        "r2": safe_float(mt_test["R2_value"]),
+                        "rmse": safe_float(mt_test["RMSE_value"]),
+                        "mae": safe_float(mt_test["MAE_value"]),
+                        "mape": safe_float(mt_test["MAPE_value"]),
+                    },
                     "cv_r2_mean": float(np.mean(cv_scores)),
                     "cv_r2_std": float(np.std(cv_scores)),
                     "cv_scores": [float(s) for s in cv_scores],
@@ -855,7 +1016,8 @@ def train_compare():
             except Exception as e:
                 results.append({
                     "model": name, "r2": None, "rmse": None, "mae": None,
-                    "mape": None, "cv_r2_mean": None, "cv_r2_std": None,
+                    "mape": None, "train_metrics": None, "test_metrics": None,
+                    "cv_r2_mean": None, "cv_r2_std": None,
                     "cv_scores": [], "time": round(time.time() - t0, 2),
                     "scatter": [],
                     "error": str(e),

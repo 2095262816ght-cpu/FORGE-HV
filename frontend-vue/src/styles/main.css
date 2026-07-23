@@ -132,15 +132,16 @@ body {
 .brand-mark {
   font-family: var(--sans);
   font-weight: 700;
-  font-size: 22px;
-  letter-spacing: -0.02em;
-  line-height: 1;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
   background: linear-gradient(135deg, var(--ember) 0%, var(--steel) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent; /* 文字渐变填充：将背景裁剪到文本范围 */
   display: inline-block;
   position: relative;
+  max-width: 100%;
 }
 .brand-mark::after {
   content: '';

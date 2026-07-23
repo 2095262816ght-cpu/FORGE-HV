@@ -1,7 +1,7 @@
 <template>
   <div>
     <PageHeader
-      sub="第 5.4 节 · 数据扩充过程"
+      sub="GAN 数据增强"
       title="数据"
       em="扩充过程"
       desc="原始数据仅 149 条，各模型严重过拟合。引入生成对抗网络（GAN）生成 10000 条符合原始分布的合成样本，扩充训练集至 10149 条，显著提升泛化性能。"
@@ -30,7 +30,7 @@
           <template #header><b>数据扩充用途</b></template>
           <p style="color:var(--text-dim);font-size:12px;line-height:1.7">
             在小样本高温合金数据集上，GAN 合成样本用于缓解过拟合，
-            对应实验对比页「5.4 数据扩充比较」。
+            对应实验对比页「数据扩充比较」。
           </p>
         </el-card>
       </div>
@@ -39,7 +39,7 @@
     <div class="page-card">
       <h3>对抗训练损失曲线（示意）</h3>
       <p style="color:var(--text-dim);font-size:12px;margin:0 0 12px;line-height:1.6">
-        本图为论文原理示意，非本次会话实时训练日志。真实 GAN 扩充数据请在「5.4 GAN 数据扩充对比」中运行实验查看指标。
+        本图为原理示意，非本次会话实时训练日志。真实 GAN 扩充数据请在「数据扩充比较」中运行实验查看训练集 / 测试集指标。
       </p>
       <div ref="chartEl" class="chart-box"></div>
     </div>

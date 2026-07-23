@@ -1,7 +1,7 @@
 <template>
   <div>
     <PageHeader
-      sub="第 3 章 · 网络模型设计（论文图 1）"
+      sub="网络模型设计"
       title="DDPG"
       em="模型架构"
       desc="深度确定性策略梯度（DDPG）基于 Actor-Critic 架构，适用于连续动作空间回归。状态 = 70 微结构 + 22 成分特征，动作 = 预测 HV，奖励 = 误差驱动反馈。"
@@ -44,7 +44,7 @@
           <el-descriptions :column="1" border size="small">
             <el-descriptions-item label="目标">缩小预测 HV 与真实 HV 的误差</el-descriptions-item>
             <el-descriptions-item label="形式">r = −|ŷ − y| 或基于 RMSE/MAE 的塑形奖励</el-descriptions-item>
-            <el-descriptions-item label="评估">R² / RMSE / MAE / MAPE（论文 5.2）</el-descriptions-item>
+            <el-descriptions-item label="评估">R² / RMSE / MAE / MAPE（训练集 / 测试集）</el-descriptions-item>
             <el-descriptions-item label="早停">验证集 R² 停滞时触发</el-descriptions-item>
           </el-descriptions>
         </el-card>

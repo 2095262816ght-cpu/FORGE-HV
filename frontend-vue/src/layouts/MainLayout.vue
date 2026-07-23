@@ -12,10 +12,9 @@
                 <stop offset="1" stop-color="#0EA5E9" />
               </linearGradient>
             </defs>
-          </svg>FORGE
+          </svg>合金维氏硬度预测
         </div>
-        <div class="brand-sub">合金维氏硬度预测</div>
-        <div class="brand-meta"><span class="dot"></span><span>v3.2 · 论文对齐</span></div>
+        <div class="brand-sub">DDPG · LR / PR / SVR</div>
       </div>
 
       <div class="sidebar-toggle" title="折叠/展开侧边栏" @click="collapsed = !collapsed">
@@ -56,7 +55,7 @@
     <main class="main-area">
       <header class="topbar">
         <div class="crumb">
-          <span>FORGE</span><span class="sep">/</span>
+          <span>合金维氏硬度预测</span><span class="sep">/</span>
           <span>{{ crumbCat }}</span><span class="sep">/</span>
           <b>{{ crumbPage }}</b>
         </div>

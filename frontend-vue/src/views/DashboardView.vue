@@ -1,10 +1,10 @@
 <template>
   <div>
     <PageHeader
-      sub="第 2 章 · 数据准备与预处理"
+      sub="数据准备与预处理"
       title="数据"
       em="可视化"
-      desc="高温合金数据集：149 条实测样本。每条样本 = 70 维微观结构特征（DINOv2-Base + PCA）+ 22 维成分特征 + 1 维维氏硬度 HV。支持导入 Excel/CSV，数据会持久保存到服务端。"
+      desc="高温合金数据集：149 条实测样本。每条样本 = 70 维微观结构特征（DINOv2-Base + PCA）+ 22 维成分特征 + 1 维维氏硬度 HV。支持导入 Excel/CSV（硬度列可为「维氏硬度 / HV / Hardness」等），数据会持久保存到服务端。"
     />
     <div class="metrics-row">
       <div class="metric-card">
@@ -32,8 +32,9 @@
     <div class="page-card">
       <h3>数据导入与持久化</h3>
       <p style="color:var(--text-dim);font-size:12px;line-height:1.7;margin:0 0 12px">
-        默认数据：项目内 <code>data_with_microstructure.xlsx</code>（149×93）。
-        导入的 Excel/CSV 会保存到服务端 <code>generated_data/</code>，刷新页面或重启 ML 服务后仍会自动恢复，不会丢。
+        默认数据：项目内 <code>data_with_microstructure.xlsx</code>（149 样本 × 70 微结构 + 22 成分 + 1 硬度）。
+        导入文件需含硬度目标列（推荐 <code>Vickers Hardness (HV)</code>；也支持「硬度 / 维氏硬度 / HV / Hardness」，或 GPa 列自动换算）。
+        导入后保存到 <code>generated_data/</code>，刷新或重启后仍会恢复。
       </p>
       <div class="toolbar">
         <el-button type="primary" :disabled="auth.isGuest" :loading="uploading" @click="fileRef?.click()">

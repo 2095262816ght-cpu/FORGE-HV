@@ -32,16 +32,16 @@
 /* ============ NAV ============ */
 /* 面包屑分类与页面名映射（11 个页面：7 论文页 + 4 系统管理页） */
 const crumbCat = {
-  dashboard: '数据准备', outliers: '数据准备', correlation: '数据准备', database: '数据准备',
-  ddpg: 'DDPG 模型', 'ddpg-arch': 'DDPG 模型', 'gan-process': 'DDPG 模型',
+  dashboard: '数据准备', outliers: '数据准备', correlation: '数据准备',
+  ddpg: 'DDPG 模型', 'ddpg-arch': 'DDPG 模型', 'gan-process': '数据扩充',
   cmp53: '实验对比', cmp54: '实验对比',
-  'data-mgr': '系统管理', history: '系统管理', users: '系统管理', settings: '系统管理',
+  results: '实验记录',
 };
 const pageNames = {
-  dashboard: '数据可视化', outliers: '异常值检测', correlation: '元素相关性', database: '数据库管理',
-  ddpg: 'DDPG 训练', 'ddpg-arch': 'DDPG 模型架构', 'gan-process': 'GAN 数据生成过程',
-  cmp53: '5.3 硬度预测对比', cmp54: '5.4 GAN 数据扩充对比',
-  'data-mgr': '数据管理', history: '历史记录', users: '用户管理', settings: '系统设置',
+  dashboard: '数据可视化', outliers: '异常值检测', correlation: '元素相关性',
+  ddpg: 'DDPG 训练', 'ddpg-arch': 'DDPG 模型架构', 'gan-process': '数据扩充过程',
+  cmp53: '材料硬度预测比较', cmp54: '数据扩充比较',
+  results: '训练结果记录',
 };
 
 /* 分类标题点击折叠 */

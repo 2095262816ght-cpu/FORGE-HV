@@ -12,9 +12,9 @@
             </linearGradient>
           </defs>
         </svg>
-        <span>FORGE</span>
+        <span>合金维氏硬度预测</span>
       </div>
-      <div class="login-title">高温合金机器学习实验台</div>
+      <div class="login-title">合金维氏硬度预测</div>
       <div class="login-sub">{{ subtitle }}</div>
 
       <div class="login-form">
@@ -149,8 +149,8 @@ const form = reactive({
 
 const subtitle = computed(() =>
   mode.value === 'register'
-    ? 'v3.1 · 论文对齐版 · 填写信息注册新账号'
-    : 'v3.1 · 论文对齐版 · 请登录后使用',
+    ? '基于 DDPG 的合金维氏硬度预测 · 填写信息注册新账号'
+    : '基于 DDPG 的合金维氏硬度预测 · 请登录后使用',
 )
 
 function focusPwd() {

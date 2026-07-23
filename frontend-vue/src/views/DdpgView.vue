@@ -1,10 +1,10 @@
 <template>
   <div>
     <PageHeader
-      sub="第 3-4 章 · 网络模型设计与训练策略"
+      sub="网络模型设计与训练策略"
       title="DDPG"
       em="模型训练"
-      desc="深度确定性策略梯度（DDPG）回归框架：Actor-Critic 网络 + 优先经验回放 + 五段式奖励函数 + 高斯噪声探索。训练结果会自动保存，切换页面后仍可回看。"
+      desc="深度确定性策略梯度（DDPG）回归框架：Actor-Critic 网络 + 优先经验回放 + 五段式奖励函数 + 高斯噪声探索。评估覆盖训练集 / 验证集 / 测试集。训练结果会自动保存。"
     />
     <div class="page-card">
       <div class="form-grid">
@@ -32,7 +32,7 @@
           <el-input-number v-model="form.lr_critic" :min="1e-6" :max="1e-2" :step="1e-5" :controls="false" style="width:100%" />
         </div>
         <div>
-          <label class="field-label">Test Size</label>
+          <label class="field-label">测试集比例</label>
           <el-input-number v-model="form.test_size" :min="0.05" :max="0.5" :step="0.05" style="width:100%" />
         </div>
       </div>
